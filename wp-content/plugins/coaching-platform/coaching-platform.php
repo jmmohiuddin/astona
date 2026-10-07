@@ -26,7 +26,7 @@ foreach ( array(
 	'sms/interface-sms-driver', 'sms/class-sms-fake-driver', 'sms/class-sms-http-driver', 'sms/class-sms-bulksmsbd-driver', 'sms/class-sms-greenweb-driver', 'sms/class-sms-factory', 'sms/class-sms',
 	'enrollment/class-roles', 'enrollment/class-enrollment-repository', 'enrollment/class-provisioner', 'enrollment/class-student-lockdown',
 	'auth/class-otp', 'auth/class-rest-auth', 'auth/class-student-guard',
-	'portal/class-portal-router', 'portal/class-portal-data',
+	'portal/class-portal-router', 'portal/class-portal-data', 'portal/class-phone-change',
 	// Sub-project 4: admin.
 	'admin/class-admin-roles', 'admin/class-audit', 'admin/class-admin-menu', 'admin/class-admin-settings', 'admin/class-admin-dashboard',
 	// Sub-project 5: course content, live classes, targeted notices.
@@ -63,7 +63,7 @@ CC_Batch_Metabox::init();
 CC_Rest_Courses::init();
 CC_Seo::init();
 
-foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
+foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Phone_Change', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
 	if ( class_exists( $cc_class ) ) {
 		$cc_class::init();
 	}

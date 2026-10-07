@@ -15,7 +15,7 @@ final class CC_Sms {
 	const PAYLOAD_PREFIX       = 'cc_sms_vars_';
 	const ERROR_MAX_LENGTH     = 255;
 
-	const SECRET_TEMPLATES = array( 'credentials', 'otp', 'apply_otp' );
+	const SECRET_TEMPLATES = array( 'credentials', 'otp', 'apply_otp', 'phone_otp' );
 
 	const TEMPLATES = array(
 		'credentials' => array(
@@ -29,6 +29,10 @@ final class CC_Sms {
 		'apply_otp'   => array(
 			'en' => 'Astona: Your phone verification code for your admission application is {code}. It expires in 5 minutes. Do not share it.',
 			'bn' => 'আস্তোনা: আপনার ভর্তি আবেদনের ফোন যাচাই কোড {code}। ৫ মিনিট পর্যন্ত বৈধ। কাউকে জানাবেন না।',
+		),
+		'phone_otp'   => array(
+			'en' => 'Astona: Your code to change your login mobile number is {code}. It expires in 5 minutes. Do not share it.',
+			'bn' => 'আস্তোনা: আপনার লগইন মোবাইল নম্বর বদলানোর কোড {code}। ৫ মিনিট পর্যন্ত বৈধ। কাউকে জানাবেন না।',
 		),
 		'receipt'     => array(
 			'en' => 'Astona: Payment received. Receipt {number}, BDT {amount}, Trx {trx_id}. Thank you.',
@@ -45,6 +49,10 @@ final class CC_Sms {
 		'notice'      => array(
 			'en' => 'Astona notice: {title}. Read: {url}',
 			'bn' => 'আস্তোনা নোটিশ: {title}। দেখুন: {url}',
+		),
+		'phone_changed' => array(
+			'en' => 'Astona: The login number on your account was changed to {new_phone}. If this was not you, contact us now.',
+			'bn' => 'আস্তোনা: আপনার অ্যাকাউন্টের লগইন নম্বর বদলে {new_phone} করা হয়েছে। আপনি না করলে এখনই আমাদের জানান।',
 		),
 		'application_rejected' => array(
 			'en' => 'Astona: Your application was not approved. Please contact us.',

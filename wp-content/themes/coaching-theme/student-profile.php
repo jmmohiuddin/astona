@@ -40,7 +40,28 @@ function portal_field( string $name, string $label, string $type, string $value,
 					<dt>Name</dt><dd><?php echo esc_html( $profile['full_name'] ); ?></dd>
 					<dt>Mobile number</dt><dd><?php echo esc_html( $profile['phone'] ); ?></dd>
 				</dl>
-				<p class="muted small">To change your name or mobile number, please contact us.</p>
+				<p class="muted small">To change your name, please contact us.</p>
+			</section>
+
+			<section class="card card--pad" aria-labelledby="pf-phone-h">
+				<h2 id="pf-phone-h">Change mobile number</h2>
+				<p class="muted small">This number is how you sign in. We text a code to the new number to confirm it.</p>
+				<form id="portal-phone-form" novalidate>
+					<div data-step="request">
+						<?php
+						portal_field( 'phone', 'New mobile number', 'tel', '', array( 'inputmode' => 'tel', 'autocomplete' => 'tel', 'required' => 'required' ) );
+						if ( ! CC_Rest_Auth::otp_recent( $user->ID ) ) {
+							portal_field( 'current_password', 'Current password', 'password', '', array( 'autocomplete' => 'current-password', 'required' => 'required' ) );
+						}
+						?>
+						<button type="submit" class="btn btn--primary">Send code</button>
+					</div>
+					<div data-step="confirm" hidden>
+						<?php portal_field( 'code', '6-digit code we sent', 'text', '', array( 'inputmode' => 'numeric', 'autocomplete' => 'one-time-code', 'maxlength' => '6' ) ); ?>
+						<button type="submit" class="btn btn--primary">Confirm new number</button>
+						<button type="button" class="btn btn--ghost" data-phone-back>Use a different number</button>
+					</div>
+				</form>
 			</section>
 
 			<section class="card card--pad" aria-labelledby="pf-contact-h">

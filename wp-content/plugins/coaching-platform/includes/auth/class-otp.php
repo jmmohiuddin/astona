@@ -28,7 +28,7 @@ final class CC_Otp {
 	const CLEANUP_HOOK       = 'cc_otp_cleanup';
 	const CLEANUP_GRACE      = 3600;
 	const PURPOSES           = array( 'login', 'phone_change', 'reset', 'apply' );
-	const SMS_TEMPLATES      = array( 'apply' => 'apply_otp' ); // Every other purpose uses the 'otp' (login code) text.
+	const SMS_TEMPLATES      = array( 'apply' => 'apply_otp', 'phone_change' => 'phone_otp' ); // Every other purpose uses the 'otp' (login code) text.
 
 	public static function hash( string $phone_e164, string $code ): string {
 		return hash_hmac( 'sha256', $phone_e164 . $code, hash_hmac( 'sha256', 'cc_otp', wp_salt( 'auth' ) ) );

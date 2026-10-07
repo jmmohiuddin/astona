@@ -80,7 +80,10 @@ final class CC_Admin_Settings {
 			$key_state = 'local' === wp_get_environment_type() ? 'Not set (local dev key in use)' : 'NOT CONFIGURED';
 		}
 
-		return array(
+		$have     = static fn( string $name ): bool => '' !== trim( defined( $name ) ? (string) constant( $name ) : (string) getenv( $name ) );
+		$bkash_ok = $have( 'BKASH_APP_KEY' ) && $have( 'BKASH_APP_SECRET' ) && $have( 'BKASH_USERNAME' ) && $have( 'BKASH_PASSWORD' ) && in_array( strtolower( trim( defined( 'BKASH_MODE' ) ? (string) BKASH_MODE : (string) getenv( 'BKASH_MODE' ) ) ), array( 'sandbox', 'live' ), true );
+
+		$rows = array(
 			'Payment gateway'       => '' === $gateway ? 'Not configured' : $gateway,
 			'SMS primary driver'    => '' === $primary ? 'Not configured' : $primary,
 			'SMS fallback driver'   => '' === $fallback ? 'None' : $fallback,
@@ -88,7 +91,12 @@ final class CC_Admin_Settings {
 			'Reconciler next run'   => $next_run ? wp_date( 'Y-m-d H:i:s', (int) $next_run ) : 'Not scheduled',
 			'Private directory'     => null !== $dir && is_dir( $dir ) && is_writable( $dir ) ? 'Writable' : 'Missing or not writable',
 			'Encryption key (ENC)'  => $key_state,
+			'Analytics (GA4)'       => $have( 'GA4_MEASUREMENT_ID' ) ? ( $have( 'GA4_API_SECRET' ) ? 'Browser and server events' : 'Browser events only' ) : 'Off',
 		);
+		if ( 'bkash' === $gateway ) {
+			$rows['bKash credentials'] = $bkash_ok ? 'Configured' : 'NOT CONFIGURED';
+		}
+		return $rows;
 	}
 
 	public static function render(): void {

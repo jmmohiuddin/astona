@@ -39,7 +39,7 @@ foreach ( array(
 	'blog/class-blog', 'gallery/class-gallery', 'gallery/class-result-photo-store', 'gallery/class-result-photo-access', 'gallery/class-result-photo-migration', 'gallery/class-results',
 	'contact/class-inquiry-repository', 'contact/class-rest-contact', 'contact/class-branches',
 	'media/class-media-rules', 'admin/class-admin-inquiries', 'admin/class-admin-media',
-	'analytics/class-ga4', 'health/class-rest-health', 'admin/class-csv', 'admin/class-admin-applications', 'admin/class-admin-students', 'admin/class-admin-payments', 'admin/class-admin-audit',
+	'analytics/class-ga4', 'health/class-rest-health', 'admin/class-csv', 'admin/class-admin-applications', 'admin/class-admin-students', 'admin/class-admin-payments', 'admin/class-admin-audit', 'admin/class-admin-sms-log',
 ) as $cc_file ) {
 	$cc_path = CC_PATH . 'includes/' . $cc_file . '.php';
 	if ( is_readable( $cc_path ) ) {

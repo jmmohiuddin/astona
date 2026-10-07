@@ -1,6 +1,6 @@
 # Astona Public Site
 
-WordPress public website for the Astona coaching center: course catalogue, batches, faculty and notices. This repository contains sub-projects 1 to 6: the public site, admission and payment (fake payment gateway for local use; the real bKash driver is not written yet), accounts, SMS and the student portal (fake SMS driver for local use; no real SMS gateway driver yet), the staff admin area (**Astona** menu in wp-admin), course content, live classes and targeted notices, and the v1 content modules (Blog, Gallery, Results, Contact and Inquiries, Media). Hosting and launch are not done (see [Not built yet](#not-built-yet)).
+WordPress public website for the Astona coaching center: course catalogue, batches, faculty and notices. This repository contains sub-projects 1 to 6: the public site, admission and payment (bKash Tokenized Checkout driver, plus a fake gateway for local use; the bKash driver is unit-tested against a scripted transport only and still needs a sandbox run), accounts, SMS and the student portal (BulkSMSBD and GreenWeb drivers, plus a fake driver for local use; the real drivers are unit-tested against a scripted transport only and still need a live account), the staff admin area (**Astona** menu in wp-admin), course content, live classes and targeted notices, and the v1 content modules (Blog, Gallery, Results, Contact and Inquiries, Media). Hosting and launch are not done (see [Not built yet](#not-built-yet)).
 
 **For coaching-center staff:** see the [Staff guide](docs/STAFF-GUIDE.md) (plain language, no code).
 
@@ -250,10 +250,16 @@ An older open payment is re-checked with the gateway before a new one is created
 | `execute( string $gateway_payment_id ): array` | Called from the callback. Return `[ 'status' => completed\|failed\|cancelled\|pending, 'trx_id' => string, 'amount' => float, 'raw' => array ]`. |
 | `query( string $gateway_payment_id ): array` | Same shape as `execute()`. Called by `settle()` as the source of truth. |
 
-### Adding the real bKash driver
+### bKash driver (`CC_Bkash_Gateway`)
 
-1. Create `includes/payments/class-bkash-gateway.php` with a class implementing `CC_Payment_Gateway`, and load it where the other payment classes are required (see `coaching-platform.php`).
-2. Register it in `CC_Gateway_Factory::make()` (`includes/payments/class-gateway-factory.php`): add a branch for the name `bkash` that returns `new CC_Bkash_Gateway()`. Unknown names throw.
+Implemented in `includes/payments/class-bkash-gateway.php` and selected with `CC_PAYMENT_GATEWAY=bkash`. Settings (constants or environment, never the database): `BKASH_MODE` (`sandbox` or `live`, required), `BKASH_APP_KEY`, `BKASH_APP_SECRET`, `BKASH_USERNAME`, `BKASH_PASSWORD`. Register `https://<site>/wp-json/cc/v1/payments/callback` with bKash. The callback route accepts `paymentID` (bKash) as well as `pid` (fake) and treats the `status` query parameter only as a hint to skip `execute`; `settle()` always re-queries bKash. Settlement also checks the merchant invoice number and currency that bKash echoes. Calls use a 5 second timeout, the `id_token` is cached in a transient until 60 s before expiry, `execute` is never retried blindly (a failure falls back to `query`), and any ambiguous answer counts as `pending`, never `completed`.
+
+**Verify in the bKash sandbox before launch** (written from the published tokenized-checkout API, never run against bKash): endpoint paths and `v1.2.0-beta` base URL, whether a retried payment on the same invoice may reuse `merchantInvoiceNumber`, the real session expiry (see `CC_Reconciler` constants), and the IPN question (OQ-05). The adapter notes below stay valid for any further gateway (Nagad, aggregator).
+
+### Adding another payment driver
+
+1. Create `includes/payments/class-<name>-gateway.php` with a class implementing `CC_Payment_Gateway` (`CC_Bkash_Gateway` is the reference), and load it where the other payment classes are required (see `coaching-platform.php`).
+2. Register it in `CC_Gateway_Factory::make()` (`includes/payments/class-gateway-factory.php`): add a branch for the new name that returns the new class. Unknown names throw.
 3. Set `CC_PAYMENT_GATEWAY=bkash` and put bKash credentials in secrets (not in compose or the repo).
 4. **Use a short HTTP timeout, 5 seconds or less, on every gateway call** (e.g. `wp_remote_request( ..., array( 'timeout' => 5 ) )`). `query()` runs inside `settle()` while row locks are held on the payment, invoice, application and batch; a slow gateway would stall other settlements. On failure, throw: the callback and reconciler catch it and retry later.
 5. Callback URL and `pid`: `create_payment()` receives `$callback_url` (`/wp-json/cc/v1/payments/callback`). Make bKash send the payer back to it with `pid=<gateway_payment_id>` appended, using the same `gateway_payment_id` you returned from `create_payment()`. The callback looks the payment up by `gateway` = `id()` and that `pid`. If bKash returns its own identifiers (for example a payment ID in different query parameters), you must map them so the route receives `pid`, which currently is the only parameter the route accepts. That mapping is not built.
@@ -387,7 +393,9 @@ Code in `includes/sms/`.
 - **Retry**: up to 3 attempts on the primary (30 seconds before attempt 2, 120 seconds before attempt 3), then one attempt on the fallback, then status `failed` (written to `error_log` without secrets). A `failed` credentials SMS does not lock the student out: they can use OTP login, if that code SMS can be delivered.
 - **Segments**: `CC_Sms::segments()` counts GSM-7 as 160 per message (153 per part when split) and anything else as UCS-2 at 70 (67 per part). The count is saved in `cc_sms_log.segments`.
 
-#### Adding a real SMS gateway driver
+#### SMS drivers: BulkSMSBD, GreenWeb and adding another
+
+Built in: `bulksmsbd` (`BULKSMSBD_API_KEY`, `BULKSMSBD_SENDER_ID`) and `greenweb` (`GREENWEB_TOKEN`), both on `CC_Sms_Http_Driver`. Set `CC_SMS_PRIMARY` and optionally `CC_SMS_FALLBACK` to one of them (or one each, as the SDD recommends). A missing credential makes `send()` fail with the setting name (never a value), so the retry and fallback logic applies. To add a different gateway:
 
 1. Create `wp-content/plugins/coaching-platform/includes/sms/class-sms-<name>-driver.php` with a class that implements `CC_Sms_Driver`. `send()` returns `[ true, '<provider message id>', '' ]` on success and `[ false, '', '<short error>' ]` on failure. Do not put secrets in the error text. Exceptions are caught and treated as a failed attempt.
 2. Load the file by adding it to the list in `coaching-platform.php` (next to `sms/class-sms-fake-driver`) and register it: `CC_Sms_Factory::register_driver( '<name>', static fn() => new CC_Sms_<Name>_Driver() );`. Names are matched lower-case. Register it before the first send (for example at the end of the driver file or on `plugins_loaded`).
@@ -449,6 +457,7 @@ docker compose run --rm -T wpcli eval-file /tests/integration/admin-core-test.ph
 docker compose run --rm -T wpcli eval-file /tests/integration/admin-applications-test.php
 docker compose run --rm -T wpcli eval-file /tests/integration/admin-students-test.php
 docker compose run --rm -T wpcli eval-file /tests/integration/admin-payments-test.php
+docker compose run --rm -T wpcli eval-file /tests/integration/refund-test.php
 docker compose run --rm -T wpcli eval-file /tests/integration/content-test.php
 docker compose run --rm -T wpcli eval-file /tests/integration/live-test.php
 docker compose run --rm -T wpcli eval-file /tests/integration/notices-test.php
@@ -509,7 +518,7 @@ BASE_URL=http://localhost:8080 BATCH=2 node "/path/to/astona-site/tests/e2e/stud
 - `sms-test.php` covers queue and send via the fake driver, that credentials/OTP secrets are not persisted, segments, retry then fallback then failed, backoff rescheduling, the driver factory and fake-driver gate, and Action Scheduler running a queued send. `provision-test.php` covers new student, replay idempotency, existing student with a second course, retry after a partial failure, guards, repository and roles, and the reconciler recovery sweep. `auth-test.php` covers OTP and login flows (hashing, expiry, lockouts, uniform errors, throttling). `portal-test.php` covers portal data including owner-only receipts. `security-test.php` covers student lockdown and the account-takeover fixes (it also calls `http://wordpress/` from inside the compose network).
 - `auth.sh` covers the login page, login and forced password change, session and nonce handling, no-store headers, and wp-admin blocking for a student.
 - `student-browser.mjs` runs at 375px and 1280px: apply, pay with the fake gateway, read the temporary password from the fake SMS outbox, log in, forced password change, dashboard, payments, receipt, profile validation, logout, relogin; at 1280px also OTP login and lockout, uniform errors, redirects, wp-admin block, another student's receipt, keyboard-only login, accessibility checks, console errors, overflow and Bangla text. It needs the same open batch (`BATCH`, default 2) and `CC_PAYMENT_GATEWAY=fake`, `CC_SMS_PRIMARY=fake` (both set in `docker-compose.yml`), and clears rate-limit transients before each phase (dev only).
-- Unit tests also cover the SMS renderer and segment counter (`SmsTest.php`).
+- Unit tests also cover the SMS renderer and segment counter (`SmsTest.php`), the BulkSMSBD and GreenWeb drivers (`SmsDriversTest.php`), the bKash driver with a scripted HTTP transport (`BkashGatewayTest.php`), and GA4 server events plus the health check (`Ga4HealthTest.php`). `refund-test.php` covers marking payments refunded.
 - Each script exits non-zero on failure.
 
 ## Operations and troubleshooting
@@ -547,23 +556,24 @@ Nothing below can be decided by the developers. None of it has been provided yet
 
 Not part of sub-projects 1 to 6:
 
-- **Admin completion and hardening.** The admin screens, roster, ledger, live classes, targeted notices and course content exist. Still missing: a refund tool, a view of failed SMS beyond the per-student SMS log.
-- **Real SMS and bKash drivers.** Only the fake SMS driver and fake payment gateway exist. See [Adding a real SMS gateway driver](#adding-a-real-sms-gateway-driver) and [Adding the real bKash driver](#adding-the-real-bkash-driver).
+- **Admin completion and hardening.** The admin screens, roster, ledger, live classes, targeted notices and course content exist. The owner now has an **SMS log** screen (failed messages first, numbers masked, no message text). Still missing: refund policy and any money-moving refund (OQ-06).
+- **Live verification of the real drivers.** The bKash (`CC_Bkash_Gateway`), BulkSMSBD and GreenWeb drivers exist and are unit-tested with a scripted transport, but have never talked to the providers. Run them against the bKash sandbox and a test SMS account first. Which SMS provider is primary is still OQ-02; sender ID approval and Bangla (Unicode) rules must be confirmed.
 - **CAPTCHA on admission.** Turnstile is wired in (widget shown when `TURNSTILE_SITE_KEY` is set, enforced when `TURNSTILE_SECRET` is set; see the admission section). Without keys only a honeypot and rate limits apply, and only in local/development for the submit.
 - **Waitlist.** A full batch hard-closes.
 - **Installments.** Full payment only.
-- **Refund workflow.** `refunded` exists only as a payment status; nothing issues or tracks refunds.
+- **Refund workflow.** Staff with the reconcile capability can mark a completed payment refunded (releases the seat, revokes access, audit-logged; see `tests/integration/refund-test.php`). Nothing moves money back through bKash and no refund policy is encoded (OQ-06).
 - **Phone change.** The phone is shown read-only ("contact us").
 - **SMS password recovery beyond OTP login.** There is no separate reset flow; students use OTP login and then change the password.
 - **Parent accounts.**
-- Also out of scope so far: React admin editor, Redis, Nginx cache.
+- **Staff 2FA, `/admin/login` slug and the React nested course editor** (TRD FR-011/FR-013): not built; use the Two Factor plugin and the existing course content screens meanwhile.
+- Also out of scope so far: Redis, Nginx cache, Sentry, PDF receipts (HTML receipts only), retention purge for applications and payments (OQ-10).
 
 Remaining work (from `03_RTM_ADR_Questions_Plan.md`) and the open questions blocking it:
 
 | Next sub-project | Blocked by |
 |---|---|
-| bKash driver for admission and payment | OQ-05 (bKash merchant account, IPN), OQ-06 (refund policy) |
-| Real SMS gateway driver (sub-project 3 is built with the fake driver) | OQ-02 (SMS gateways, sender ID) |
+| Sandbox verification of the bKash driver | OQ-05 (bKash merchant account, IPN), OQ-06 (refund policy) |
+| Live verification of the SMS drivers | OQ-02 (SMS gateways, sender ID) |
 | Launch review of lesson PDF downloads | OQ-09 (PDF lesson downloads at launch) |
 | Admin completion and hardening (React editor, Redis, Nginx cache) | Depends on earlier sub-projects |
 | Hosting and launch | OQ-10 (data residency, retention, legal) |

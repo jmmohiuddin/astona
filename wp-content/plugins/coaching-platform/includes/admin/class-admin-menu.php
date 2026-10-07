@@ -24,6 +24,7 @@ final class CC_Admin_Menu {
 			array( 'slug' => 'cc-media', 'title' => 'Media', 'cap' => CC_Admin_Roles::CAP_MANAGE_MEDIA, 'class' => 'CC_Admin_Media' ),
 			array( 'slug' => 'cc-payments', 'title' => 'Payments', 'cap' => CC_Admin_Roles::CAP_VIEW_PAYMENTS, 'class' => 'CC_Admin_Payments' ),
 			array( 'slug' => 'cc-audit', 'title' => 'Audit log', 'cap' => CC_Admin_Roles::CAP_VIEW_AUDIT, 'class' => 'CC_Admin_Audit' ),
+			array( 'slug' => 'cc-sms-log', 'title' => 'SMS log', 'cap' => CC_Admin_Roles::CAP_VIEW_AUDIT, 'class' => 'CC_Admin_Sms_Log' ),
 			array( 'slug' => 'cc-settings', 'title' => 'Settings', 'cap' => CC_Admin_Roles::CAP_MANAGE_SETTINGS, 'class' => 'CC_Admin_Settings' ),
 		);
 	}

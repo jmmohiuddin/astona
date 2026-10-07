@@ -241,7 +241,9 @@ curl -sI https://www.example.com/student/ | grep -i cache-control   # private, n
 ```
 
 Uptime monitors (UptimeRobot or similar, 1 minute, alert to phone): `/`, `/wp-json/cc/v1/courses`, `/student/login/`,
-`/admissions/`. Also watch: cron container health, disk space (`/var/lib/docker`, backups), backup log age, TLS
+`/admissions/`, and `/wp-json/cc/v1/health`. The health endpoint answers 200 `{"ok":true,...}` or 503 when the database is
+unreachable, the reconciler has not run for 5 minutes (cron stopped), a payment has been initiated for over 10 minutes, or
+any payment is in `reconcile_needed`. It returns booleans only. Also watch: cron container health, disk space (`/var/lib/docker`, backups), backup log age, TLS
 certificate expiry, and `docker compose logs wordpress | grep -i "cc provisioning failed\|fatal"`.
 Error tracking: Sentry is **not integrated**; if wanted, add the SDK/plugin and put the DSN in `.env` as
 `SENTRY_DSN` (placeholder only; nothing reads it today).

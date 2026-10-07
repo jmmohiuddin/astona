@@ -1,6 +1,74 @@
 ( function () {
 	'use strict';
 
+	// Analytics (PRD 27). Nothing is loaded or sent until the visitor accepts; no personal data is ever attached.
+	var GA_ID = window.ASTONA && window.ASTONA.ga4;
+	var CONSENT_KEY = 'cc_consent';
+	var gaLoaded = false;
+
+	function consent() {
+		try { return window.localStorage.getItem( CONSENT_KEY ); } catch ( e ) { return null; }
+	}
+
+	function loadGa() {
+		if ( gaLoaded || ! GA_ID ) { return; }
+		gaLoaded = true;
+		window.dataLayer = window.dataLayer || [];
+		window.gtag = function () { window.dataLayer.push( arguments ); };
+		window.gtag( 'js', new Date() );
+		window.gtag( 'config', GA_ID, { anonymize_ip: true, transport_type: 'beacon' } );
+		var s = document.createElement( 'script' );
+		s.async = true;
+		s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent( GA_ID );
+		document.head.appendChild( s );
+	}
+
+	window.astonaTrack = function ( name, params ) {
+		if ( ! GA_ID || 'granted' !== consent() ) { return; }
+		loadGa();
+		window.gtag( 'event', name, params || {} );
+	};
+
+	function showBanner() {
+		var bar = document.createElement( 'div' );
+		bar.className = 'consent-bar';
+		bar.setAttribute( 'role', 'region' );
+		bar.setAttribute( 'aria-label', 'Analytics consent' );
+		bar.innerHTML = '<p>We use anonymous analytics to improve this site. No personal details are shared.</p>' +
+			'<div class="consent-bar__actions"><button type="button" class="btn btn--primary" data-consent="granted">Accept</button>' +
+			'<button type="button" class="btn btn--ghost" data-consent="denied">Decline</button></div>';
+		bar.addEventListener( 'click', function ( event ) {
+			var choice = event.target && event.target.getAttribute && event.target.getAttribute( 'data-consent' );
+			if ( ! choice ) { return; }
+			try { window.localStorage.setItem( CONSENT_KEY, choice ); } catch ( e ) { /* private mode: ask again next visit */ }
+			bar.remove();
+			if ( 'granted' === choice ) { loadGa(); fireViews(); }
+		} );
+		document.body.appendChild( bar );
+	}
+
+	// Elements marked data-cc-view="event_name" report once when the page is seen.
+	function fireViews() {
+		document.querySelectorAll( '[data-cc-view]' ).forEach( function ( el ) {
+			window.astonaTrack( el.getAttribute( 'data-cc-view' ), { course_id: el.getAttribute( 'data-cc-course' ) || undefined } );
+		} );
+	}
+
+	// Elements marked data-cc-event="event_name" report on click (links keep working: gtag uses a beacon).
+	document.addEventListener( 'click', function ( event ) {
+		var el = event.target && event.target.closest ? event.target.closest( '[data-cc-event]' ) : null;
+		if ( el ) { window.astonaTrack( el.getAttribute( 'data-cc-event' ), { course_id: el.getAttribute( 'data-cc-course' ) || undefined } ); }
+	} );
+
+	if ( GA_ID ) {
+		var choice = consent();
+		if ( 'granted' === choice ) { loadGa(); fireViews(); } else if ( null === choice ) { showBanner(); }
+	}
+} )();
+
+( function () {
+	'use strict';
+
 	// Mobile navigation.
 	var toggle = document.querySelector( '.nav-toggle' );
 	var nav = document.getElementById( 'primary-nav' );

@@ -14,6 +14,12 @@ add_action(
 	}
 );
 
+/** GA4 measurement ID (constant or env var); empty when unset or malformed, which disables analytics entirely. */
+function astona_ga4_id(): string {
+	$id = defined( 'GA4_MEASUREMENT_ID' ) ? (string) GA4_MEASUREMENT_ID : (string) getenv( 'GA4_MEASUREMENT_ID' );
+	return 1 === preg_match( '/^G-[A-Z0-9]{4,14}$/', $id ) ? $id : '';
+}
+
 /** Public Turnstile site key (constant or env var); empty disables the widget. */
 function astona_turnstile_site_key(): string {
 	$key = defined( 'TURNSTILE_SITE_KEY' ) ? (string) TURNSTILE_SITE_KEY : (string) getenv( 'TURNSTILE_SITE_KEY' );
@@ -33,7 +39,7 @@ add_action(
 	static function () {
 		wp_enqueue_style( 'astona-main', get_theme_file_uri( 'assets/css/main.css' ), array(), ASTONA_VERSION );
 		wp_enqueue_script( 'astona-main', get_theme_file_uri( 'assets/js/main.js' ), array(), ASTONA_VERSION, array( 'in_footer' => true, 'strategy' => 'defer' ) );
-		wp_localize_script( 'astona-main', 'ASTONA', array( 'coursesUrl' => esc_url_raw( rest_url( 'cc/v1/courses' ) ) ) );
+		wp_localize_script( 'astona-main', 'ASTONA', array( 'coursesUrl' => esc_url_raw( rest_url( 'cc/v1/courses' ) ), 'ga4' => astona_ga4_id() ) );
 		if ( is_page( 'contact' ) ) {
 			wp_enqueue_script( 'astona-contact', get_theme_file_uri( 'assets/js/contact.js' ), array(), ASTONA_VERSION, array( 'in_footer' => true, 'strategy' => 'defer' ) );
 			wp_localize_script( 'astona-contact', 'ASTONA_CONTACT', array( 'restBase' => esc_url_raw( rest_url( 'cc/v1/' ) ) ) );

@@ -497,6 +497,7 @@
 			} ).then( function ( r ) {
 				if ( r.ok && r.body.redirect_url ) {
 					progress.textContent = 'Redirecting to payment…';
+					if ( window.astonaTrack ) { window.astonaTrack( 'complete_admission' ); window.astonaTrack( 'payment_redirect' ); }
 					if ( ! goTo( r.body.redirect_url ) ) { fail( 'Could not start payment. Please try again.' ); }
 					return;
 				}

@@ -147,6 +147,7 @@
 				self.override = '';
 				self.render();
 				say( '', false );
+				if ( window.astonaTrack ) { window.astonaTrack( 'launch_live_class' ); }
 				if ( win ) { win.location.replace( url ); } else { self.showFallback( url ); }
 				return;
 			}

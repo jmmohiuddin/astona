@@ -19,11 +19,11 @@ foreach ( array( 'migrations', 'post-types', 'status-chip', 'batch-repository', 
 // Sub-project 2: admission + payment. Files are created by the module owners; loaded only if present.
 foreach ( array(
 	'support/class-crypto', 'support/class-phone', 'support/class-rate-limiter', 'support/class-idempotency',
-	'payments/interface-payment-gateway', 'payments/class-fake-gateway', 'payments/class-gateway-factory',
+	'payments/interface-payment-gateway', 'payments/class-fake-gateway', 'payments/class-bkash-gateway', 'payments/class-gateway-factory',
 	'payments/class-settlement', 'payments/class-refund', 'payments/class-reconciler', 'payments/class-rest-payments',
 	'admissions/class-application-repository', 'admissions/class-photo-store', 'admissions/class-phone-proof', 'admissions/class-rest-phone-proof', 'admissions/class-rest-admissions', 'admissions/class-seat-recount',
 	// Sub-project 3: accounts, SMS, portal.
-	'sms/interface-sms-driver', 'sms/class-sms-fake-driver', 'sms/class-sms-factory', 'sms/class-sms',
+	'sms/interface-sms-driver', 'sms/class-sms-fake-driver', 'sms/class-sms-http-driver', 'sms/class-sms-bulksmsbd-driver', 'sms/class-sms-greenweb-driver', 'sms/class-sms-factory', 'sms/class-sms',
 	'enrollment/class-roles', 'enrollment/class-enrollment-repository', 'enrollment/class-provisioner', 'enrollment/class-student-lockdown',
 	'auth/class-otp', 'auth/class-rest-auth', 'auth/class-student-guard',
 	'portal/class-portal-router', 'portal/class-portal-data',

@@ -27,7 +27,16 @@ final class CC_Rest_Payments {
 				'callback'            => array( __CLASS__, 'callback' ),
 				// Public: the payer's browser returns here; nothing in the request is trusted, settlement re-queries the gateway.
 				'permission_callback' => '__return_true',
-				'args'                => array( 'pid' => $pid_arg ),
+				// bKash appends paymentID (and a status hint) to the registered callback URL; the fake gateway sends pid.
+				'args'                => array(
+					'pid'       => array_merge( $pid_arg, array( 'required' => false ) ),
+					'paymentID' => array_merge( $pid_arg, array( 'required' => false ) ),
+					'status'    => array(
+						'type'     => 'string',
+						'required' => false,
+						'enum'     => array( 'success', 'failure', 'cancel' ),
+					),
+				),
 			)
 		);
 
@@ -71,7 +80,10 @@ final class CC_Rest_Payments {
 			error_log( 'CC_Rest_Payments callback: gateway unavailable: ' . $e->getMessage() );
 			return self::redirect( home_url( '/admissions/?paid=0' ) );
 		}
-		$gateway_id = (string) $request->get_param( 'pid' );
+		$gateway_id = (string) ( $request->get_param( 'pid' ) ?: $request->get_param( 'paymentID' ) );
+		if ( '' === $gateway_id ) {
+			return new WP_Error( 'cc_payment_not_found', 'Payment not found.', array( 'status' => 400 ) );
+		}
 
 		$payment = $wpdb->get_row(
 			$wpdb->prepare(
@@ -90,7 +102,10 @@ final class CC_Rest_Payments {
 
 		$paid = 0;
 		try {
-			$gateway->execute( $gateway_id );
+			// The status param is only a hint to skip a pointless execute; settle() re-queries the gateway regardless.
+			if ( ! in_array( (string) $request->get_param( 'status' ), array( 'failure', 'cancel' ), true ) ) {
+				$gateway->execute( $gateway_id );
+			}
 			$result = CC_Settlement::settle( (int) $payment['id'], 'callback' );
 			$paid   = in_array( $result['result'], array( 'settled', 'already_settled' ), true ) ? 1 : 0;
 		} catch ( Throwable $e ) {

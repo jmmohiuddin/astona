@@ -106,6 +106,13 @@ final class CC_Settlement {
 		if ( $paid_cents !== $expected_cents || 'unpaid' !== $invoice['status'] || 'pending' !== $application['status'] ) {
 			return 'mismatch';
 		}
+		// Drivers that echo the merchant invoice number / currency (bKash) must agree with our invoice; the fake gateway omits them.
+		if ( ! empty( $report['invoice'] ) && (string) $report['invoice'] !== (string) $invoice['number'] ) {
+			return 'mismatch';
+		}
+		if ( ! empty( $report['currency'] ) && strtoupper( (string) $report['currency'] ) !== strtoupper( (string) $invoice['currency'] ) ) {
+			return 'mismatch';
+		}
 		return null;
 	}
 

@@ -163,7 +163,7 @@ t_assert( '0.00' === CC_Admin_Payments::query( array( 's' => 'ZZRF-', 'status' =
 t_assert( (float) $ledger_was - (float) CC_Admin_Payments::query( array( 's' => 'ZZRF-' ) )['completed_sum'] === 6000.00, 'ledger totals bar excludes the refunded amount' );
 $csv = iterator_to_array( CC_Admin_Payments::csv_rows( CC_Admin_Payments::filters_from( array( 's' => 'ZZRF-', 'status' => 'refunded' ) ), false ), false );
 t_assert( 1 <= count( $csv ) && 'Status' === CC_Admin_Payments::CSV_HEADER[8] && 'refunded' === $csv[0][8], 'CSV export carries the refunded status' );
-t_assert( str_contains( CC_Admin_Payments::status_html( array( 'status' => 'refunded' ) ), 'cc-chip--refunded' ) && '' === CC_Admin_Payments::refund_link( $f['payment'] ) === false, 'refunded status renders as a chip; owner sees the row action helper' );
+t_assert( str_contains( CC_Admin_Payments::status_html( array( 'status' => 'refunded' ) ), 'cc-chip--refunded' ) && '' !== CC_Admin_Payments::refund_link( $f['payment'] ), 'refunded status renders as a chip; owner sees the row action helper' );
 
 echo "mark_refunded(): idempotent, seat released once\n";
 $again = CC_Admin_Payments::mark_refunded( $f['payment'], 'other', '', $owner );

@@ -58,6 +58,12 @@ final class CC_Sms_Factory {
 		if ( 'fake' === $name ) {
 			return new CC_Sms_Fake_Driver();
 		}
+		if ( 'bulksmsbd' === $name ) {
+			return new CC_Sms_Bulksmsbd_Driver();
+		}
+		if ( 'greenweb' === $name ) {
+			return new CC_Sms_Greenweb_Driver();
+		}
 		throw new RuntimeException( sprintf( 'Unknown SMS driver "%s".', $name ) );
 	}
 }

@@ -51,7 +51,8 @@ function portal_field( string $name, string $label, string $type, string $value,
 						<?php
 						portal_field( 'phone', 'New mobile number', 'tel', '', array( 'inputmode' => 'tel', 'autocomplete' => 'tel', 'required' => 'required' ) );
 						if ( ! CC_Rest_Auth::otp_recent( $user->ID ) ) {
-							portal_field( 'current_password', 'Current password', 'password', '', array( 'autocomplete' => 'current-password', 'required' => 'required' ) );
+							// Own name and id: the password form further down has a field called current_password.
+							portal_field( 'phone_password', 'Current password', 'password', '', array( 'autocomplete' => 'current-password', 'required' => 'required' ) );
 						}
 						?>
 						<button type="submit" class="btn btn--primary">Send code</button>

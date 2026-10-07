@@ -118,11 +118,11 @@
 		submitForm( phoneForm, function ( data ) {
 			if ( stepConfirm.hidden ) {
 				pendingPhone = data.phone;
-				return api( 'POST', 'me/phone/request', { phone: data.phone, current_password: data.current_password || '' } ).then( function ( res ) {
+				return api( 'POST', 'me/phone/request', { phone: data.phone, current_password: data.phone_password || '' } ).then( function ( res ) {
 					if ( res.ok ) { showStep( true ); say( res.body.message, false ); }
 					else if ( res.body && res.body.code && ! res.body.details ) {
 						res.body.details = {};
-						res.body.details[ 'wrong_password' === res.body.code ? 'current_password' : 'phone' ] = res.body.message;
+						res.body.details[ 'wrong_password' === res.body.code ? 'phone_password' : 'phone' ] = res.body.message;
 					}
 					return res;
 				} );

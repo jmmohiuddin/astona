@@ -39,7 +39,7 @@ foreach ( array(
 	'live/class-live-repository', 'live/class-rest-live',
 	'notices/class-notice-service', 'notices/class-notice-access',
 	'portal/class-portal-courses',
-	'admin/class-admin-content', 'admin/class-admin-live', 'admin/class-admin-notices',
+	'admin/class-admin-content', 'admin/class-course-tree', 'admin/class-admin-course-editor', 'admin/class-admin-live', 'admin/class-admin-notices',
 	// Sub-project 6: blog, gallery/results, contact/inquiries, media.
 	'blog/class-blog', 'gallery/class-gallery', 'gallery/class-result-photo-store', 'gallery/class-result-photo-access', 'gallery/class-result-photo-migration', 'gallery/class-results',
 	'contact/class-inquiry-repository', 'contact/class-rest-contact', 'contact/class-branches',
@@ -68,7 +68,7 @@ CC_Batch_Metabox::init();
 CC_Rest_Courses::init();
 CC_Seo::init();
 
-foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Daily_Jobs', 'CC_Retention', 'CC_Installments', 'CC_Phone_Change', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
+foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Course_Tree', 'CC_Admin_Course_Editor', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Daily_Jobs', 'CC_Retention', 'CC_Installments', 'CC_Phone_Change', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
 	if ( class_exists( $cc_class ) ) {
 		$cc_class::init();
 	}

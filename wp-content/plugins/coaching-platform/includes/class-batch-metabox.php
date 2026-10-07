@@ -48,6 +48,7 @@ final class CC_Batch_Metabox {
 			$rows[] = array();
 		}
 		?>
+		<p><a class="button button-primary" href="<?php echo esc_url( class_exists( 'CC_Admin_Course_Editor' ) ? CC_Admin_Course_Editor::editor_url( $post->ID ) : '#' ); ?>">Open the course editor</a> to edit batches, modules and lessons together on one screen. The rows below still work.</p>
 		<p class="description">Leave the name empty to skip a row. Remove a batch by clearing its name. "Seats taken" is managed by admissions and cannot be edited here.</p>
 		<?php foreach ( $rows as $i => $row ) : ?>
 			<fieldset style="border:1px solid #c3c4c7;padding:10px;margin:0 0 10px;">

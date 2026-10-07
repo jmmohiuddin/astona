@@ -1,0 +1,146 @@
+name: CI
+
+# Runs on every push and pull request. Browser journeys (Playwright) are a separate, manually triggered job.
+# Locally the same checks are: tests/unit/run.sh, `docker compose up -d && scripts/setup.sh`, then the
+# commands listed in README.md "Tests".
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_browser:
+        description: "Also run the Playwright browser journeys"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_URL: http://localhost:8080
+
+jobs:
+  static-and-unit:
+    name: Lint, JS check, unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP lint (all PHP files, PHP 8.3)
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app php:8.3-cli sh -c '
+            set -e
+            find . -name "*.php" -not -path "./node_modules/*" -not -path "./.git/*" -print0 \
+              | xargs -0 -n1 -P4 sh -c "php -l \"\$0\" >/dev/null || { echo \"PHP syntax error: \$0\" >&2; exit 255; }"
+            echo "PHP lint ok"'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS syntax check (node --check)
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' f; do
+            node --check "$f" || { echo "JS syntax error: $f" >&2; exit 1; }
+          done < <(find wp-content tests -type f \( -name '*.js' -o -name '*.mjs' \) -not -path '*/node_modules/*' -print0)
+          echo "JS check ok"
+
+      - name: Unit tests
+        run: tests/unit/run.sh
+
+  integration-and-e2e:
+    name: Stack, integration suites, curl e2e
+    needs: static-and-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The stack uses only public images (mariadb, wordpress, wordpress:cli); nothing is built, so there are
+      # no layers of ours to cache. Pre-pulling in parallel keeps `up` fast and surfaces registry errors early.
+      - name: Pull images
+        run: docker compose pull --quiet
+
+      - name: Start stack and set up WordPress
+        run: |
+          docker compose up -d
+          ADMIN_PASSWORD="$(openssl rand -hex 16)" scripts/setup.sh
+
+      - name: Integration suites
+        run: |
+          set -euo pipefail
+          for suite in settlement admission sms provision auth portal security \
+                       admin-core admin-applications admin-students admin-payments \
+                       blog contact content gallery live media notices portal-courses results-photo seat-recount; do
+            echo "::group::integration/$suite"
+            docker compose run --rm -T wpcli eval-file "/tests/integration/${suite}-test.php"
+            echo "::endgroup::"
+          done
+
+      - name: Recount batch seats (integration suites consume seats)
+        run: docker compose run --rm -T wpcli cc recount-seats
+
+      - name: Curl e2e scripts
+        run: |
+          set -euo pipefail
+          for script in smoke admission auth admin live notices-privacy portal-courses \
+                        blog gallery contact media-privacy results-photo; do
+            echo "::group::e2e/$script"
+            OPEN_BATCH=2 CLOSED_BATCH=7 "tests/e2e/${script}.sh"
+            echo "::endgroup::"
+          done
+
+      - name: Stack logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  browser-journeys:
+    name: Browser journeys (Playwright, manual)
+    # Only when someone starts the workflow by hand (Actions tab > CI > Run workflow).
+    if: github.event_name == 'workflow_dispatch' && inputs.run_browser
+    needs: static-and-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright (not a repo dependency)
+        run: |
+          npm i --no-save --no-package-lock playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start stack and set up WordPress
+        run: |
+          docker compose up -d
+          ADMIN_PASSWORD="$(openssl rand -hex 16)" scripts/setup.sh
+
+      - name: Browser journeys
+        run: |
+          set -euo pipefail
+          for script in admission-browser student-browser admin-browser content-live-browser v1-browser; do
+            echo "::group::e2e/$script"
+            BATCH=2 node "tests/e2e/${script}.mjs"
+            echo "::endgroup::"
+          done
+
+      - name: Stack logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

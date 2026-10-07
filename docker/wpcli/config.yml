@@ -1,0 +1,26 @@
+# Global WP-CLI config for the wpcli container (WP_CLI_CONFIG_PATH).
+# WP-CLI runs the mysql client with --no-defaults unless --defaults is given,
+# which would ignore client-nossl.cnf. Enable defaults for db subcommands.
+db check:
+  defaults: true
+db query:
+  defaults: true
+db cli:
+  defaults: true
+db export:
+  defaults: true
+db import:
+  defaults: true
+db optimize:
+  defaults: true
+db repair:
+  defaults: true
+db tables:
+  defaults: true
+db size:
+  defaults: true
+db search:
+  defaults: true
+# Lets `wp rewrite structure --hard` write .htaccess (wordpress image uses mod_rewrite).
+apache_modules:
+  - mod_rewrite

@@ -1,0 +1,4 @@
+# Local dev only: MariaDB 11.x client in wordpress:cli requires TLS by default,
+# but the dev mariadb container does not offer it.
+[client]
+skip-ssl

@@ -1,0 +1,154 @@
+# Production stack for the Astona site (single host, behind a TLS reverse proxy).
+#
+# Usage (standalone, recommended):
+#   export COMPOSE_FILE=docker-compose.prod.yml
+#   docker compose up -d
+# Also valid as an override of the dev file (`-f docker-compose.yml -f docker-compose.prod.yml`):
+# every dev-only setting is replaced with `!override`, so no dev switch survives the merge.
+#
+# Secrets come only from `.env` (see .env.example; never commit it). This file contains names only.
+# Requires Docker Compose v2.24+ (`!override`).
+#
+# Dev-only switches (rate-limit bypass, fake payment gateway, fake SMS) are intentionally absent.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Same mounts for wordpress, wpcli and cron. Code is mounted read-only from the release directory
+# (see docs/DEPLOYMENT.md for symlink releases).
+x-wp-env: &wp-env
+  WORDPRESS_DB_HOST: db
+  WP_ENVIRONMENT_TYPE: production
+  CC_PRIVATE_DIR: /var/www/private
+  WORDPRESS_CONFIG_EXTRA: |
+    define('WP_ENVIRONMENT_TYPE', 'production');
+    define('DISALLOW_FILE_EDIT', true);
+    define('DISALLOW_FILE_MODS', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('DISABLE_WP_CRON', true);
+
+services:
+  db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    # No `ports:` on purpose: the database is reachable only on the compose network.
+    environment: !override
+      MARIADB_DATABASE: ${WORDPRESS_DB_NAME:?set WORDPRESS_DB_NAME in .env}
+      MARIADB_USER: ${WORDPRESS_DB_USER:?set WORDPRESS_DB_USER in .env}
+      MARIADB_PASSWORD: ${WORDPRESS_DB_PASSWORD:?set WORDPRESS_DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?set MARIADB_ROOT_PASSWORD in .env}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes: !override
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+
+  wordpress:
+    image: wordpress:6-php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Bind to loopback only; the TLS reverse proxy on the host forwards to this port.
+    ports: !override
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    env_file: .env
+    environment: !override
+      <<: *wp-env
+    volumes: !override
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform:ro
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme:ro
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - private_data:/var/www/private
+      - ./docker/php/prod.ini:/usr/local/etc/php/conf.d/zz-prod.ini:ro
+      - ./docker/apache/security.conf:/etc/apache2/conf-enabled/zz-astona-security.conf:ro
+    healthcheck:
+      # Any 2xx/3xx from PHP (wp-login redirects to https under FORCE_SSL_ADMIN) means Apache + PHP are up.
+      test:
+        - CMD-SHELL
+        - >-
+          php -r '$$c=stream_context_create(["http"=>["follow_location"=>0,"ignore_errors"=>true,"timeout"=>5]]);
+          @file_get_contents("http://127.0.0.1/wp-login.php",false,$$c);
+          exit(isset($$http_response_header[0]) && preg_match("#\\s[23][0-9][0-9]\\s#",$$http_response_header[0]) ? 0 : 1);'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
+
+  # WP-CLI on demand: docker compose run --rm wpcli <command>
+  wpcli:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    depends_on:
+      - wordpress
+    env_file: .env
+    environment: !override
+      <<: *wp-env
+      WP_CLI_CONFIG_PATH: /etc/wp-cli/config.yml
+    volumes: !override
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform:ro
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme:ro
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - private_data:/var/www/private
+      # The client image defaults to TLS; the compose-internal DB does not offer it.
+      - ./docker/wpcli/client-nossl.cnf:/etc/my.cnf.d/zz-client-nossl.cnf:ro
+      - ./docker/wpcli/config.yml:/etc/wp-cli/config.yml:ro
+    entrypoint: ["wp"]
+    profiles: ["tools"]
+
+  # Real system cron stand-in: drains Action Scheduler and due WP-Cron events every 60 seconds.
+  # WP-Cron itself is disabled (DISABLE_WP_CRON) so this is the only scheduler.
+  cron:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    restart: unless-stopped
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    env_file: .env
+    environment: !override
+      <<: *wp-env
+      WP_CLI_CONFIG_PATH: /etc/wp-cli/config.yml
+    volumes: !override
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform:ro
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme:ro
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - private_data:/var/www/private
+      - ./docker/wpcli/client-nossl.cnf:/etc/my.cnf.d/zz-client-nossl.cnf:ro
+      - ./docker/wpcli/config.yml:/etc/wp-cli/config.yml:ro
+    entrypoint: ["sh", "-c"]
+    command: !override
+      - |
+        while true; do
+          if wp action-scheduler run && wp cron event run --due-now; then
+            touch /tmp/cron-ok
+          else
+            echo "cron runner: iteration failed, retrying in 60s" >&2
+          fi
+          sleep 60
+        done
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/cron-ok -mmin -3 2>/dev/null)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+      start_interval: 5s
+    logging: *default-logging
+
+volumes:
+  wp_data:
+  db_data:
+  private_data:

@@ -1,0 +1,11 @@
+# Secrets: never commit. Use .env.example as the template.
+.env
+.env.*
+!.env.example
+
+# Backups contain personal data (PII) and database dumps.
+backups/
+
+node_modules/
+*.log
+.DS_Store

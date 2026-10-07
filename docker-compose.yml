@@ -1,0 +1,125 @@
+x-wp-volumes: &wp-volumes
+  - wp_data:/var/www/html
+  - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform
+  - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme
+  - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins
+  - ./scripts:/scripts
+  - private_data:/var/www/private
+
+x-wp-env: &wp-env
+  WORDPRESS_DB_HOST: db
+  WORDPRESS_DB_USER: astona
+  WORDPRESS_DB_PASSWORD: astona_dev_pw
+  WORDPRESS_DB_NAME: astona
+  WORDPRESS_CONFIG_EXTRA: |
+    define('WP_ENVIRONMENT_TYPE', 'local');
+    define('DISALLOW_FILE_EDIT', true);
+  CC_PRIVATE_DIR: /var/www/private
+  CC_RATE_LIMIT_DISABLED: "1"  # local dev/test only; ignored unless WP_ENVIRONMENT_TYPE=local
+  CC_PAYMENT_GATEWAY: fake  # local dev/test only; the fake gateway also requires local/development env type
+  CC_SMS_PRIMARY: fake  # local dev/test only
+
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_DATABASE: astona
+      MARIADB_USER: astona
+      MARIADB_PASSWORD: astona_dev_pw
+      MARIADB_ROOT_PASSWORD: astona_root_dev_pw
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  wordpress:
+    image: wordpress:6-php8.3-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    environment: *wp-env
+    volumes:
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins
+      - ./scripts:/scripts
+      - private_data:/var/www/private
+      - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/zz-uploads.ini:ro
+
+  wpcli:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    depends_on:
+      - wordpress
+    environment:
+      <<: *wp-env
+      WP_CLI_CONFIG_PATH: /etc/wp-cli/config.yml
+    volumes:
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins
+      - ./scripts:/scripts
+      - ./tests:/tests
+      - private_data:/var/www/private
+      # MariaDB 11.x client in this image requires TLS by default; the dev DB has none.
+      - ./docker/wpcli/client-nossl.cnf:/etc/my.cnf.d/zz-client-nossl.cnf:ro
+      - ./docker/wpcli/config.yml:/etc/wp-cli/config.yml:ro
+    entrypoint: ["wp"]
+    profiles: ["tools"]
+
+  # Real-cron stand-in: drains Action Scheduler (reconciler, provisioning, SMS) and due WP-Cron events
+  # every 60 seconds. Starts with a plain `docker compose up -d` (no profile).
+  cron:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    restart: unless-stopped
+    depends_on:
+      - wordpress
+    environment:
+      <<: *wp-env
+      WP_CLI_CONFIG_PATH: /etc/wp-cli/config.yml
+    volumes:
+      - wp_data:/var/www/html
+      - ./wp-content/plugins/coaching-platform:/var/www/html/wp-content/plugins/coaching-platform
+      - ./wp-content/themes/coaching-theme:/var/www/html/wp-content/themes/coaching-theme
+      - ./wp-content/mu-plugins:/var/www/html/wp-content/mu-plugins
+      - ./scripts:/scripts
+      - private_data:/var/www/private
+      - ./docker/wpcli/client-nossl.cnf:/etc/my.cnf.d/zz-client-nossl.cnf:ro
+      - ./docker/wpcli/config.yml:/etc/wp-cli/config.yml:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          if ! wp core is-installed >/dev/null 2>&1; then
+            # Fresh stack: stay "healthy" so `docker compose up -d --wait` (scripts/setup.sh) does not stall.
+            echo "cron runner: WordPress not installed yet, waiting" >&2
+            touch /tmp/cron-ok
+          elif wp action-scheduler run && wp cron event run --due-now; then
+            touch /tmp/cron-ok
+          else
+            echo "cron runner: iteration failed, retrying in 60s" >&2
+          fi
+          sleep 60
+        done
+    healthcheck:
+      # healthy while the last fully successful iteration is under 3 minutes old
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/cron-ok -mmin -3 2>/dev/null)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+      start_interval: 5s
+
+volumes:
+  wp_data:
+  db_data:
+  private_data:

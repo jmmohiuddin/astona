@@ -80,8 +80,8 @@ echo "inquiries list row action (real browser-style POST)"
 wp user create "$STAFF" "$STAFF@example.invalid" --role=cc_staff --user_pass="$STAFF_PW" >/dev/null
 JAR="$TMP/jar"
 ADMIN="$BASE_URL/wp-admin/admin.php"
-curl -sS -m 20 -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/wp-login.php"
-STATUS="$(curl -sS -m 30 -b "$JAR" -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/wp-login.php" \
+curl -sS -m 20 -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/admin/login/"
+STATUS="$(curl -sS -m 30 -b "$JAR" -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/admin/login/" \
 	--data-urlencode "log=$STAFF" --data-urlencode "pwd=$STAFF_PW" --data-urlencode "wp-submit=Log In" --data-urlencode "testcookie=1")" || STATUS=000
 check "staff login redirects" "$STATUS" "302"
 INQ_ID="$(wp eval "global \$wpdb; echo (int) \$wpdb->get_var(\$wpdb->prepare('SELECT id FROM '.\$wpdb->prefix.'cc_inquiries WHERE name = %s AND status = %s ORDER BY id DESC LIMIT 1', '$NAME', 'new'));")"

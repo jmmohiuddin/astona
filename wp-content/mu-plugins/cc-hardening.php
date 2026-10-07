@@ -11,7 +11,11 @@ add_filter( 'xmlrpc_methods', '__return_empty_array' );
 add_filter( 'pings_open', '__return_false' );
 
 // Uniform login error: do not reveal whether a username exists.
-add_filter( 'login_errors', static fn(): string => 'Invalid username or password.' );
+// The two-factor step (reached only after a correct password) keeps its own messages so staff can tell what to do.
+add_filter(
+	'login_errors',
+	static fn( $message ): string => class_exists( 'CC_Staff_2fa' ) && CC_Staff_2fa::$show_message ? (string) $message : 'Invalid username or password.'
+);
 
 // Do not leak author names through oEmbed.
 add_filter(

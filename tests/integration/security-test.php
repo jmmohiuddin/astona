@@ -101,15 +101,15 @@ if ( is_wp_error( $live ) ) {
 	}
 	t_assert( 200 === wp_remote_retrieve_response_code( $live ) && $has_auth, 'live /cc/v1/auth/login signs the student in (200 + auth cookie)' );
 }
-$form = wp_remote_post( 'http://wordpress/wp-login.php', array( 'body' => array( 'log' => $login, 'pwd' => $pw ), 'timeout' => 20, 'redirection' => 0 ) );
+$form = wp_remote_post( 'http://wordpress/admin/login/', array( 'headers' => array( 'Cookie' => 'wordpress_test_cookie=WP%20Cookie%20check' ), 'body' => array( 'log' => $login, 'pwd' => $pw ), 'timeout' => 20, 'redirection' => 0 ) );
 if ( is_wp_error( $form ) ) {
-	t_assert( false, 'live wp-login.php reachable: ' . $form->get_error_message() );
+	t_assert( false, 'live staff login reachable: ' . $form->get_error_message() );
 } else {
 	$logged_in = false;
 	foreach ( wp_remote_retrieve_cookies( $form ) as $c ) {
 		$logged_in = $logged_in || 0 === strpos( $c->name, 'wordpress_logged_in_' );
 	}
-	t_assert( ! $logged_in && 200 === wp_remote_retrieve_response_code( $form ), 'live wp-login.php refuses the student (no auth cookie)' );
+	t_assert( ! $logged_in && 200 === wp_remote_retrieve_response_code( $form ), 'live staff login refuses the student (no auth cookie)' );
 }
 
 echo "H3: core users REST closed to students\n";

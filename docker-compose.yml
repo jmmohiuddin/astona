@@ -18,6 +18,7 @@ x-wp-env: &wp-env
   CC_RATE_LIMIT_DISABLED: "1"  # local dev/test only; ignored unless WP_ENVIRONMENT_TYPE=local
   CC_PAYMENT_GATEWAY: fake  # local dev/test only; the fake gateway also requires local/development env type
   CC_SMS_PRIMARY: fake  # local dev/test only
+  CC_STAFF_SECURITY_RELAXED: "1"  # local dev/test only: skips staff 2FA and export re-auth; ignored unless WP_ENVIRONMENT_TYPE=local
 
 services:
   db:

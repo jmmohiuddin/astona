@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           for suite in settlement admission sms provision auth portal security \
-                       admin-core admin-applications admin-students admin-payments refund \
+                       admin-core admin-applications admin-students admin-payments refund staff-security \
                        blog contact content gallery live media notices portal-courses results-photo seat-recount; do
             echo "::group::integration/$suite"
             docker compose run --rm -T wpcli eval-file "/tests/integration/${suite}-test.php"

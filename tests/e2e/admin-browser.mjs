@@ -112,7 +112,7 @@ const adminUrl = (page, extra = '') => `/wp-admin/admin.php?page=${page}${extra}
 const NOT_ALLOWED = /not allowed to access this page|not allowed to (view|do)|do not have permission|link you followed has expired|cannot access/i;
 
 async function wpLogin(p, user) {
-  await p.goto(`${BASE}/wp-login.php`);
+  await p.goto(`${BASE}/admin/login/`);
   await p.fill('#user_login', user.login);
   await p.fill('#user_pass', user.pass);
   await p.click('#wp-submit');
@@ -727,7 +727,7 @@ async function permissions(browser, fx) {
     check(`anonymous GET ${q.split('&')[0]} gives no data`, !/text\/csv|image\//.test(r.headers()['content-type'] || '') && r.status() !== 200, String(r.status()));
   }
   const ar = await anon.request.get(`${BASE}/wp-admin/admin.php?page=cc-applications`, { maxRedirects: 0, failOnStatusCode: false });
-  check('anonymous admin screen redirects to login', ar.status() === 302 && /wp-login/.test(ar.headers().location || ''), String(ar.status()));
+  check('anonymous admin screen redirects to login', ar.status() === 302 && /admin\/login/.test(ar.headers().location || ''), String(ar.status()));
   await anon.close();
   await o.ctx.close();
 

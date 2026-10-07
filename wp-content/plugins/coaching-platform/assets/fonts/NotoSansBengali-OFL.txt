@@ -1,0 +1,9 @@
+Noto Sans Bengali
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/bengali)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+The license text is available at https://openfontlicense.org and is bundled with
+the font package from https://github.com/notofonts/bengali.
+
+The font is embedded in generated PDF receipts so that Bangla names render with
+correct conjunct shaping.

@@ -12,6 +12,11 @@ defined( 'ABSPATH' ) || exit;
 define( 'CC_VERSION', '0.1.0' );
 define( 'CC_PATH', plugin_dir_path( __FILE__ ) );
 
+// Optional Composer dependencies (mPDF for PDF receipts). The plugin works without them.
+if ( is_readable( CC_PATH . 'vendor/autoload.php' ) ) {
+	require_once CC_PATH . 'vendor/autoload.php';
+}
+
 foreach ( array( 'migrations', 'post-types', 'status-chip', 'batch-repository', 'batch-metabox', 'rest-courses', 'seo', 'seeder' ) as $cc_file ) {
 	require_once CC_PATH . 'includes/class-' . $cc_file . '.php';
 }
@@ -26,7 +31,7 @@ foreach ( array(
 	'sms/interface-sms-driver', 'sms/class-sms-fake-driver', 'sms/class-sms-http-driver', 'sms/class-sms-bulksmsbd-driver', 'sms/class-sms-greenweb-driver', 'sms/class-sms-factory', 'sms/class-sms',
 	'enrollment/class-roles', 'enrollment/class-enrollment-repository', 'enrollment/class-provisioner', 'enrollment/class-student-lockdown',
 	'auth/class-otp', 'auth/class-rest-auth', 'auth/class-student-guard',
-	'portal/class-portal-router', 'portal/class-portal-data', 'portal/class-phone-change',
+	'portal/class-portal-router', 'portal/class-portal-data', 'portal/class-phone-change', 'portal/class-receipt-pdf',
 	// Sub-project 4: admin.
 	'admin/class-admin-roles', 'admin/class-audit', 'admin/class-admin-menu', 'admin/class-admin-settings', 'admin/class-admin-dashboard',
 	// Sub-project 5: course content, live classes, targeted notices.

@@ -73,8 +73,8 @@ final class CC_Portal_Data {
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only.
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT pay.id AS payment_id, pay.amount, pay.trx_id, pay.method, pay.settled_at,
-					inv.number AS invoice_number, inv.currency,
+				"SELECT pay.id AS payment_id, pay.amount, pay.kind, pay.trx_id, pay.method, pay.settled_at,
+					inv.number AS invoice_number, inv.currency, inv.amount AS invoice_total, inv.id AS invoice_id,
 					app.full_name AS student_name, app.student_phone, app.batch_id
 				FROM {$p}cc_applications app
 				JOIN {$p}cc_invoices inv ON inv.application_id = app.id
@@ -90,6 +90,16 @@ final class CC_Portal_Data {
 		if ( ! is_array( $row ) ) {
 			return null;
 		}
+		// What the invoice had received up to and including this payment (later parts are not on this receipt).
+		$row['paid_to_date'] = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(amount),0) FROM {$p}cc_payments WHERE invoice_id = %d AND status IN ('completed','refunded') AND ( settled_at < %s OR ( settled_at = %s AND id <= %d ) )",
+				$row['invoice_id'],
+				(string) $row['settled_at'],
+				(string) $row['settled_at'],
+				$payment_id
+			)
+		);
 		$batch               = CC_Batch_Repository::find( (int) $row['batch_id'] );
 		$course              = $batch ? get_post( (int) $batch['course_id'] ) : null;
 		$row['batch_name']   = $batch ? (string) $batch['name'] : '';

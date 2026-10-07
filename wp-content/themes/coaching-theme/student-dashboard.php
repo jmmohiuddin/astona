@@ -27,6 +27,12 @@ get_header();
 	<div class="container">
 		<?php get_template_part( 'template-parts/student-nav', null, array( 'current' => 'dashboard' ) ); ?>
 		<p class="portal-status" id="portal-status" role="status" aria-live="polite"></p>
+		<?php foreach ( CC_Installments::outstanding( $user->ID ) as $due ) : ?>
+			<p class="notice-box" role="<?php echo $due['overdue'] || $due['suspended'] ? 'alert' : 'status'; ?>">
+				Balance due: <strong><?php echo esc_html( astona_money( $due['balance'] ) ); ?></strong> for <?php echo esc_html( (string) $due['batch_name'] ); ?><?php echo $due['suspended'] ? ' (access paused until it is paid)' : ( $due['overdue'] ? ' (overdue)' : '' ); ?>.
+				<a href="<?php echo esc_url( home_url( '/student/payments/' ) ); ?>">Pay now</a>
+			</p>
+		<?php endforeach; ?>
 
 		<h2>My courses</h2>
 		<?php if ( empty( $data['enrollments'] ) ) : ?>

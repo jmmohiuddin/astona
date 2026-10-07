@@ -24,7 +24,7 @@ final class CC_Rest_Admissions {
 
 	public static function register_routes(): void {
 		$fields = array();
-		foreach ( array( 'batch_id', 'full_name', 'gender', 'dob', 'id_doc_type', 'id_doc_number', 'student_phone', 'guardian_name', 'guardian_phone', 'email', 'institution', 'class_level', 'passing_year', 'roll_no', 'branch_pref', 'consent', 'phone_proof', self::HONEYPOT ) as $name ) {
+		foreach ( array( 'batch_id', 'full_name', 'gender', 'dob', 'id_doc_type', 'id_doc_number', 'student_phone', 'guardian_name', 'guardian_phone', 'email', 'institution', 'class_level', 'passing_year', 'roll_no', 'branch_pref', 'consent', 'phone_proof', 'payment_plan', self::HONEYPOT ) as $name ) {
 			$fields[ $name ] = array( 'type' => 'string' );
 		}
 
@@ -240,11 +240,20 @@ final class CC_Rest_Admissions {
 			|| ! CC_Rate_Limiter::allow( 'status:' . $ip . ':' . $ref, 30, MINUTE_IN_SECONDS ) ) {
 			return self::error( 429, 'rate_limited', 'Too many requests.' );
 		}
-		return self::respond( array( 'status' => $view['status'], 'payment_status' => $view['payment_status'] ) );
+		$body = array( 'status' => $view['status'], 'payment_status' => $view['payment_status'] );
+		if ( isset( $view['waitlist_position'] ) ) {
+			$body['waitlist_position'] = (int) $view['waitlist_position'];
+		}
+		return self::respond( $body );
 	}
 
 	/** Replays hand back the existing open payment's redirect; new applications start one. */
 	private static function payment_response( array $application, int $status ): WP_REST_Response {
+		if ( 'waitlisted' === $application['status'] ) {
+			// Full batch with a waitlist: nothing to pay yet. Staff offer a seat; the applicant is told by SMS.
+			CC_Waitlist::notify_joined( $application );
+			return self::respond( array( 'ref' => $application['public_ref'], 'waitlisted' => true, 'redirect_url' => add_query_arg( 'ref', $application['public_ref'], home_url( '/admissions/' ) ) ), $status );
+		}
 		$invoice = CC_Application_Repository::find_invoice( (int) $application['id'] );
 		if ( 200 === $status ) {
 			$payment  = $invoice ? CC_Application_Repository::latest_payment( (int) $invoice['id'] ) : null;
@@ -265,13 +274,14 @@ final class CC_Rest_Admissions {
 			return self::error( 503, 'gateway_unavailable', 'Payment is temporarily unavailable. Please try again shortly.' );
 		}
 
-		$payment_id = CC_Application_Repository::insert_payment( $invoice, $gateway->id() );
+		$amount     = CC_Application_Repository::initial_amount( $invoice );
+		$payment_id = CC_Application_Repository::insert_payment( $invoice, $gateway->id(), $amount );
 		try {
 			$result = $gateway->create_payment(
 				array(
 					'id'              => (int) $invoice['id'],
 					'number'          => $invoice['number'],
-					'amount'          => (float) $invoice['amount'],
+					'amount'          => (float) $amount,
 					'currency'        => $invoice['currency'],
 					'application_ref' => $application['public_ref'],
 					'payment_id'      => $payment_id,
@@ -300,7 +310,7 @@ final class CC_Rest_Admissions {
 		$batch     = ctype_digit( $batch_raw ) ? CC_Batch_Repository::find( (int) $batch_raw ) : null;
 		if ( ! $batch || 'draft' === $batch['status'] ) {
 			$errors['batch_id'] = 'Batch not found.';
-		} elseif ( CC_Status_Chip::CLOSED === CC_Status_Chip::for_batch( (string) $batch['status'], (bool) $batch['application_open'], (int) $batch['capacity'], (int) $batch['seats_taken'] ) ) {
+		} elseif ( CC_Status_Chip::CLOSED === CC_Status_Chip::for_row( $batch ) ) {
 			$errors['batch_id'] = 'This batch is not accepting applications.';
 		}
 
@@ -365,6 +375,12 @@ final class CC_Rest_Admissions {
 		if ( '' !== $branch_raw && ! ctype_digit( $branch_raw ) ) {
 			$errors['branch_pref'] = 'Invalid branch.';
 		}
+		$plan = '' === $text( 'payment_plan' ) ? 'full' : $text( 'payment_plan' );
+		if ( ! in_array( $plan, array( 'full', 'installment' ), true ) ) {
+			$errors['payment_plan'] = 'Choose how you want to pay.';
+		} elseif ( 'installment' === $plan && ( ! $batch || empty( $batch['installments_enabled'] ) ) ) {
+			$errors['payment_plan'] = 'Two-part payment is not available for this batch.';
+		}
 		if ( ! in_array( strtolower( $text( 'consent' ) ), array( '1', 'on', 'true', 'yes' ), true ) ) {
 			$errors['consent'] = 'You must agree to continue.';
 		}
@@ -393,6 +409,7 @@ final class CC_Rest_Admissions {
 				'roll_no'        => '' === $roll_no ? null : $roll_no,
 				'branch_pref'    => '' === $branch_raw ? null : (int) $branch_raw,
 				'consent_at'     => gmdate( 'Y-m-d H:i:s' ),
+				'payment_plan'   => $plan,
 			),
 		);
 	}

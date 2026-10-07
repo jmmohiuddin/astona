@@ -108,12 +108,7 @@ final class CC_Seo {
 			if ( 'completed' === $batch['status'] ) {
 				continue;
 			}
-			$available = CC_Status_Chip::CLOSED !== CC_Status_Chip::for_batch(
-				(string) $batch['status'],
-				(bool) $batch['application_open'],
-				(int) $batch['capacity'],
-				(int) $batch['seats_taken']
-			);
+			$available = in_array( CC_Status_Chip::for_row( $batch ), array( CC_Status_Chip::OPEN, CC_Status_Chip::FILLING ), true );
 			$offer     = array(
 				'@type'         => 'Offer',
 				'category'      => $batch['delivery_mode'],

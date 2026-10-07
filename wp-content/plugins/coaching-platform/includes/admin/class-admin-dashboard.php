@@ -24,6 +24,9 @@ final class CC_Admin_Dashboard {
 
 		return array(
 			'pending_applications' => $count( "SELECT COUNT(*) FROM {$p}cc_applications WHERE status = 'pending'" ),
+			'waitlisted'           => $count( "SELECT COUNT(*) FROM {$p}cc_applications WHERE status = 'waitlisted'" ),
+			'balances_due'         => (float) $wpdb->get_var( "SELECT COALESCE(SUM(amount - amount_paid),0) FROM {$p}cc_invoices WHERE status = 'partial'" ),
+			'balances_overdue'     => $count( "SELECT COUNT(*) FROM {$p}cc_invoices WHERE status = 'partial' AND due_at IS NOT NULL AND due_at < UTC_TIMESTAMP()" ),
 			'applications_today'   => $count( "SELECT COUNT(*) FROM {$p}cc_applications WHERE created_at >= %s", array( $today ) ),
 			'applications_7d'      => $count( "SELECT COUNT(*) FROM {$p}cc_applications WHERE created_at >= %s", array( $week ) ),
 			'revenue_today'        => $money( $today ),
@@ -57,10 +60,13 @@ final class CC_Admin_Dashboard {
 		if ( $can_apps ) {
 			$link = add_query_arg( array( 'page' => 'cc-applications', 'status' => 'pending' ), admin_url( 'admin.php' ) );
 			self::card( 'Pending applications', (string) $s['pending_applications'], '', $link, $s['pending_applications'] > 0 );
+			$wl_link = add_query_arg( array( 'page' => 'cc-applications', 'status' => 'waitlisted' ), admin_url( 'admin.php' ) );
+			self::card( 'Waitlisted', (string) $s['waitlisted'], 'Offer seats from the application page', $wl_link, $s['waitlisted'] > 0 );
 			self::card( 'Applications today', (string) $s['applications_today'], 'Last 7 days: ' . $s['applications_7d'] );
 		}
 		if ( $can_money ) {
 			self::card( 'Revenue today', self::money( $s['revenue_today'] ), '30 days: ' . self::money( $s['revenue_30d'] ) . ' / total: ' . self::money( $s['revenue_total'] ) );
+			self::card( 'Balances due', self::money( $s['balances_due'] ), $s['balances_overdue'] . ' overdue', '', $s['balances_overdue'] > 0 );
 			$link = add_query_arg( array( 'page' => 'cc-payments', 'status' => 'stuck' ), admin_url( 'admin.php' ) );
 			self::card( 'Stuck payments', (string) $s['stuck_payments'], 'Initiated/executing over ' . CC_Admin_Payments::STUCK_MINUTES . ' min, or needs reconcile', $link, $s['stuck_payments'] > 0 );
 		}

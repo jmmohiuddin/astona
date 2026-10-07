@@ -19,9 +19,9 @@ foreach ( array( 'migrations', 'post-types', 'status-chip', 'batch-repository', 
 // Sub-project 2: admission + payment. Files are created by the module owners; loaded only if present.
 foreach ( array(
 	'support/class-crypto', 'support/class-phone', 'support/class-rate-limiter', 'support/class-idempotency',
-	'payments/interface-payment-gateway', 'payments/class-fake-gateway', 'payments/class-bkash-gateway', 'payments/class-gateway-factory',
-	'payments/class-settlement', 'payments/class-refund', 'payments/class-reconciler', 'payments/class-rest-payments',
-	'admissions/class-application-repository', 'admissions/class-photo-store', 'admissions/class-phone-proof', 'admissions/class-rest-phone-proof', 'admissions/class-rest-admissions', 'admissions/class-seat-recount',
+	'payments/interface-payment-gateway', 'payments/interface-refundable-gateway', 'payments/class-fake-gateway', 'payments/class-bkash-gateway', 'payments/class-gateway-factory',
+	'payments/class-settlement', 'payments/class-refund', 'payments/class-installments', 'class-daily-jobs', 'class-retention', 'payments/class-reconciler', 'payments/class-rest-payments',
+	'admissions/class-application-repository', 'admissions/class-photo-store', 'admissions/class-phone-proof', 'admissions/class-rest-phone-proof', 'admissions/class-rest-admissions', 'admissions/class-seat-recount', 'admissions/class-waitlist',
 	// Sub-project 3: accounts, SMS, portal.
 	'sms/interface-sms-driver', 'sms/class-sms-fake-driver', 'sms/class-sms-http-driver', 'sms/class-sms-bulksmsbd-driver', 'sms/class-sms-greenweb-driver', 'sms/class-sms-factory', 'sms/class-sms',
 	'enrollment/class-roles', 'enrollment/class-enrollment-repository', 'enrollment/class-provisioner', 'enrollment/class-student-lockdown',
@@ -63,7 +63,7 @@ CC_Batch_Metabox::init();
 CC_Rest_Courses::init();
 CC_Seo::init();
 
-foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Phone_Change', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
+foreach ( array( 'CC_Rest_Admissions', 'CC_Rest_Phone_Proof', 'CC_Rest_Payments', 'CC_Reconciler', 'CC_Sms', 'CC_Roles', 'CC_Provisioner', 'CC_Student_Lockdown', 'CC_Rest_Auth', 'CC_Student_Guard', 'CC_Portal_Router', 'CC_Admin_Roles', 'CC_Admin_Menu', 'CC_Admin_Settings', 'CC_Admin_Applications', 'CC_Admin_Students', 'CC_Admin_Payments', 'CC_Admin_Audit', 'CC_Admin_Dashboard', 'CC_Rest_Live', 'CC_Notice_Service', 'CC_Notice_Access', 'CC_Portal_Courses', 'CC_Admin_Content', 'CC_Admin_Live', 'CC_Admin_Notices', 'CC_Blog', 'CC_Gallery', 'CC_Result_Photo_Access', 'CC_Results', 'CC_Rest_Contact', 'CC_Branches', 'CC_Media_Rules', 'CC_Admin_Inquiries', 'CC_Admin_Media', 'CC_Ga4', 'CC_Rest_Health', 'CC_Daily_Jobs', 'CC_Retention', 'CC_Installments', 'CC_Phone_Change', 'CC_Staff_Login', 'CC_Staff_2fa', 'CC_Reauth' ) as $cc_class ) {
 	if ( class_exists( $cc_class ) ) {
 		$cc_class::init();
 	}

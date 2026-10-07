@@ -98,8 +98,11 @@ final class CC_Applications_Table extends WP_List_Table {
 		$id      = (int) $item['id'];
 		$view    = add_query_arg( array( 'page' => CC_Admin_Applications::PAGE, 'view' => $id ), admin_url( 'admin.php' ) );
 		$actions = array( 'view' => sprintf( '<a href="%s">View</a>', esc_url( $view ) ) );
-		if ( 'pending' === $item['status'] && current_user_can( CC_Admin_Applications::CAP_REVIEW ) ) {
+		if ( in_array( $item['status'], array( 'pending', 'waitlisted' ), true ) && current_user_can( CC_Admin_Applications::CAP_REVIEW ) ) {
 			$actions['reject'] = sprintf( '<a href="%s#reject">Reject</a>', esc_url( $view ) );
+		}
+		if ( 'waitlisted' === $item['status'] && current_user_can( CC_Admin_Applications::CAP_REVIEW ) ) {
+			$actions['offer'] = sprintf( '<a href="%s">Offer a seat</a>', esc_url( $view ) );
 		}
 		return sprintf( '<strong><a href="%s">%s</a></strong>%s', esc_url( $view ), esc_html( $item['public_ref'] ), $this->row_actions( $actions ) );
 	}

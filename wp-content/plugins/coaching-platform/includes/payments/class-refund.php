@@ -17,7 +17,28 @@ final class CC_Refund {
 	const LOCK_TIMEOUT = 5;
 
 	/**
-	 * @return array{result:string,seat_released:bool}|WP_Error result: refunded | refunded_duplicate | already_refunded.
+	 * Read-only check run BEFORE money is sent back at the gateway, so a refund that cannot be recorded is never made.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function precheck( int $payment_id ) {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$payment = $wpdb->get_row( $wpdb->prepare( "SELECT id, invoice_id, status, kind FROM {$p}cc_payments WHERE id = %d", $payment_id ), ARRAY_A );
+		if ( ! is_array( $payment ) ) {
+			return new WP_Error( 'not_found', 'Payment not found.' );
+		}
+		if ( 'completed' !== $payment['status'] ) {
+			return new WP_Error( 'refund_not_completed', 'Only completed payments can be marked refunded.' );
+		}
+		if ( 'balance' !== $payment['kind'] && (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$p}cc_payments WHERE invoice_id = %d AND kind = 'balance' AND status = 'completed'", $payment['invoice_id'] ) ) > 0 ) {
+			return new WP_Error( 'refund_balance_first', 'Refund the balance payment first.' );
+		}
+		return true;
+	}
+
+	/**
+	 * @return array{result:string,seat_released:bool,batch_id:int}|WP_Error result: refunded | refunded_balance | refunded_duplicate | already_refunded.
 	 *         Inputs are validated by the caller (CC_Admin_Payments::mark_refunded).
 	 */
 	public static function record( int $payment_id, string $category, string $reference, int $actor ) {
@@ -54,6 +75,9 @@ final class CC_Refund {
 		if ( is_wp_error( $outcome ) || 'already_refunded' === $outcome['result'] ) {
 			return $outcome;
 		}
+		if ( $outcome['seat_released'] ) {
+			do_action( 'cc_seat_released', (int) $outcome['batch_id'] );
+		}
 		CC_Audit::log(
 			'payment.refund',
 			'payment',
@@ -69,12 +93,15 @@ final class CC_Refund {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$siblings = $wpdb->get_results( $wpdb->prepare( "SELECT id, status, amount FROM {$p}cc_payments WHERE invoice_id = %d ORDER BY id FOR UPDATE", $invoice_id ), ARRAY_A );
+		$siblings = $wpdb->get_results( $wpdb->prepare( "SELECT id, status, amount, kind FROM {$p}cc_payments WHERE invoice_id = %d ORDER BY id FOR UPDATE", $invoice_id ), ARRAY_A );
 		$payment  = null;
-		$other_completed = false;
+		$other_completed   = false; // Another completed payment of the SAME fee (a duplicate charge), not a balance instalment.
+		$balance_completed = false;
 		foreach ( (array) $siblings as $row ) {
 			if ( (int) $row['id'] === $payment_id ) {
 				$payment = $row;
+			} elseif ( 'completed' === $row['status'] && 'balance' === $row['kind'] ) {
+				$balance_completed = true;
 			} elseif ( 'completed' === $row['status'] ) {
 				$other_completed = true;
 			}
@@ -83,17 +110,28 @@ final class CC_Refund {
 			return new WP_Error( 'not_found', 'Payment not found.' );
 		}
 		if ( 'refunded' === $payment['status'] ) {
-			return array( 'result' => 'already_refunded', 'seat_released' => false );
+			return array( 'result' => 'already_refunded', 'seat_released' => false, 'batch_id' => 0 );
 		}
 		if ( 'completed' !== $payment['status'] ) {
 			return new WP_Error( 'refund_not_completed', 'Only completed payments can be marked refunded.' );
 		}
 
+		if ( 'balance' !== $payment['kind'] && $balance_completed ) {
+			// The fee was paid in two parts: the balance goes back first, then the first part ends the enrolment.
+			return new WP_Error( 'refund_balance_first', 'Refund the balance payment first.' );
+		}
+
 		$now = gmdate( 'Y-m-d H:i:s' );
 		self::exec( $wpdb->prepare( "UPDATE {$p}cc_payments SET status = 'refunded', updated_at = %s WHERE id = %d", $now, $payment_id ) );
 		self::log_event( $payment_id, $category, $reference, (string) $payment['amount'], $actor, $now );
+		if ( 'balance' === $payment['kind'] ) {
+			// Only the balance goes back: the student keeps the seat and owes that part again.
+			$wpdb->get_row( $wpdb->prepare( "SELECT id FROM {$p}cc_invoices WHERE id = %d FOR UPDATE", $invoice_id ) );
+			self::exec( $wpdb->prepare( "UPDATE {$p}cc_invoices SET amount_paid = GREATEST(0, amount_paid - %f), status = IF(status = 'void', status, 'partial') WHERE id = %d", (float) $payment['amount'], $invoice_id ) );
+			return array( 'result' => 'refunded_balance', 'seat_released' => false, 'batch_id' => 0 );
+		}
 		if ( $other_completed ) {
-			return array( 'result' => 'refunded_duplicate', 'seat_released' => false );
+			return array( 'result' => 'refunded_duplicate', 'seat_released' => false, 'batch_id' => 0 );
 		}
 
 		$wpdb->get_row( $wpdb->prepare( "SELECT id FROM {$p}cc_invoices WHERE id = %d FOR UPDATE", $invoice_id ) );
@@ -104,7 +142,7 @@ final class CC_Refund {
 		$wpdb->get_row( $wpdb->prepare( "SELECT id FROM {$p}cc_batches WHERE id = %d FOR UPDATE", $application['batch_id'] ) );
 		$wpdb->get_row( $wpdb->prepare( "SELECT id FROM {$p}cc_enrollments WHERE application_id = %d FOR UPDATE", $application_id ) );
 
-		self::exec( $wpdb->prepare( "UPDATE {$p}cc_invoices SET status = 'void' WHERE id = %d", $invoice_id ) );
+		self::exec( $wpdb->prepare( "UPDATE {$p}cc_invoices SET status = 'void', amount_paid = 0 WHERE id = %d", $invoice_id ) );
 		self::exec( $wpdb->prepare( "UPDATE {$p}cc_enrollments SET status = 'deactivated' WHERE application_id = %d AND status = 'active'", $application_id ) );
 
 		$seat_released = false;
@@ -112,7 +150,7 @@ final class CC_Refund {
 			self::exec( $wpdb->prepare( "UPDATE {$p}cc_applications SET status = 'cancelled', updated_at = %s WHERE id = %d", $now, $application_id ) );
 			$seat_released = 1 === $wpdb->query( $wpdb->prepare( "UPDATE {$p}cc_batches SET seats_taken = seats_taken - 1 WHERE id = %d AND seats_taken > 0", $application['batch_id'] ) );
 		}
-		return array( 'result' => 'refunded', 'seat_released' => $seat_released );
+		return array( 'result' => 'refunded', 'seat_released' => $seat_released, 'batch_id' => (int) $application['batch_id'] );
 	}
 
 	/** Deduped by the unique event_key; the payload is only ever read through CC_Admin_Payments::events() whitelists. */

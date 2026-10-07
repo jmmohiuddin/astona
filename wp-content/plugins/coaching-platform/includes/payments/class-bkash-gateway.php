@@ -13,7 +13,7 @@ defined( 'ABSPATH' ) || exit;
  * Endpoint paths and field names follow bKash's published tokenized-checkout API and must be confirmed against the
  * merchant sandbox before launch (TRD C-04 / OQ-05).
  */
-final class CC_Bkash_Gateway implements CC_Payment_Gateway {
+final class CC_Bkash_Gateway implements CC_Refundable_Gateway {
 
 	const BASE_URLS = array(
 		'sandbox' => 'https://tokenized.sandbox.bka.sh/v1.2.0-beta/tokenized/checkout',
@@ -117,6 +117,34 @@ final class CC_Bkash_Gateway implements CC_Payment_Gateway {
 	public function query( string $gateway_payment_id ): array {
 		$res = $this->call( 'payment/status', array( 'paymentID' => $gateway_payment_id ), true );
 		return self::normalise( $res );
+	}
+
+	/**
+	 * Sends money back through bKash. Never retried on a transport error: if the first call reached bKash the refund may
+	 * have happened, so the caller must check in the bKash merchant panel before trying again.
+	 */
+	public function refund( string $gateway_payment_id, string $trx_id, float $amount, string $reason ): array {
+		try {
+			$res = $this->call(
+				'payment/refund',
+				array(
+					'paymentId' => $gateway_payment_id,
+					'trxId'     => $trx_id,
+					'amount'    => number_format( $amount, 2, '.', '' ),
+					'sku'       => 'fee',
+					'reason'    => substr( $reason, 0, 100 ),
+				),
+				false
+			);
+		} catch ( RuntimeException $e ) {
+			return array( 'ok' => false, 'refund_trx_id' => '', 'error' => 'No answer from bKash. Check the bKash merchant panel before retrying.' );
+		}
+		$done = self::SUCCESS_CODE === (string) ( $res['statusCode'] ?? '' ) && 'completed' === strtolower( (string) ( $res['transactionStatus'] ?? '' ) ) && '' !== (string) ( $res['refundTrxId'] ?? '' );
+		return array(
+			'ok'            => $done,
+			'refund_trx_id' => $done ? (string) $res['refundTrxId'] : '',
+			'error'         => $done ? '' : 'bKash refused the refund: ' . self::describe( $res ),
+		);
 	}
 
 	/**

@@ -21,6 +21,7 @@ function delete_transient( string $k ): bool {
 
 $dir = __DIR__ . '/../../wp-content/plugins/coaching-platform/includes/payments/';
 require $dir . 'interface-payment-gateway.php';
+require $dir . 'interface-refundable-gateway.php';
 require $dir . 'class-bkash-gateway.php';
 
 $GLOBALS['t_pass'] = 0;
@@ -139,6 +140,25 @@ $g   = new CC_Bkash_Gateway( CFG, transport( array( array( 503, array() ), array
 check( 'query HTTP 5xx throws after one retry attempt', true, throws( function () use ( $g ) {
 	$g->query( 'TR001' );
 } ) );
+
+echo "refund\n";
+$GLOBALS['t_transients'] = array();
+$log = array();
+$g   = new CC_Bkash_Gateway( CFG, transport( array( GRANT, array( 200, array( 'statusCode' => '0000', 'transactionStatus' => 'Completed', 'refundTrxId' => 'RF123' ) ) ), $log ), fn() => 1000 );
+check( 'is a refundable gateway', true, $g instanceof CC_Refundable_Gateway );
+$r = $g->refund( 'TR001', 'TX9', 6000.0, 'Student withdrew' );
+check( 'refund succeeds with a reference', array( true, 'RF123', '' ), array( $r['ok'], $r['refund_trx_id'], $r['error'] ) );
+check( 'refund hits the refund endpoint with payment, trx and amount', array( true, 'TR001', 'TX9', '6000.00' ), array( str_ends_with( $log[1]['url'], '/payment/refund' ), $log[1]['body']['paymentId'], $log[1]['body']['trxId'], $log[1]['body']['amount'] ) );
+$log = array();
+$g   = new CC_Bkash_Gateway( CFG, transport( array( array( 200, array( 'statusCode' => '2060', 'statusMessage' => 'Refund not allowed' ) ) ), $log ), fn() => 1000 );
+$r   = $g->refund( 'TR001', 'TX9', 1.0, 'x' );
+check( 'a refusal is reported, not thrown', array( false, '' ), array( $r['ok'], $r['refund_trx_id'] ) );
+check( 'the refusal carries the bKash code', true, str_contains( $r['error'], '2060' ) );
+check( 'completed without a refund reference is not success', false, ( new CC_Bkash_Gateway( CFG, transport( array( array( 200, array( 'statusCode' => '0000', 'transactionStatus' => 'Completed' ) ) ), $log ), fn() => 1000 ) )->refund( 'a', 'b', 1.0, 'x' )['ok'] );
+$log = array();
+$g   = new CC_Bkash_Gateway( CFG, transport( array( new RuntimeException( 'timeout' ) ), $log ), fn() => 1000 );
+$r   = $g->refund( 'TR001', 'TX9', 1.0, 'x' );
+check( 'a transport failure is not retried and is not success', array( false, 1 ), array( $r['ok'], count( $log ) ) );
 
 echo "\n" . $GLOBALS['t_pass'] . ' passed, ' . count( $GLOBALS['t_fail'] ) . " failed\n";
 exit( $GLOBALS['t_fail'] ? 1 : 0 );

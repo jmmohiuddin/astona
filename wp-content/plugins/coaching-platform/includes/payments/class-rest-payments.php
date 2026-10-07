@@ -87,7 +87,7 @@ final class CC_Rest_Payments {
 
 		$payment = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT p.id, a.public_ref FROM {$wpdb->prefix}cc_payments p
+				"SELECT p.id, p.kind, a.public_ref FROM {$wpdb->prefix}cc_payments p
 				JOIN {$wpdb->prefix}cc_invoices i ON i.id = p.invoice_id
 				JOIN {$wpdb->prefix}cc_applications a ON a.id = i.application_id
 				WHERE p.gateway = %s AND p.gateway_payment_id = %s",
@@ -107,12 +107,16 @@ final class CC_Rest_Payments {
 				$gateway->execute( $gateway_id );
 			}
 			$result = CC_Settlement::settle( (int) $payment['id'], 'callback' );
-			$paid   = in_array( $result['result'], array( 'settled', 'already_settled' ), true ) ? 1 : 0;
+			$paid   = in_array( $result['result'], CC_Settlement::SUCCESS_RESULTS, true ) ? 1 : 0;
 		} catch ( Throwable $e ) {
 			// The reconciler retries; the confirmation page polls status meanwhile.
 			error_log( sprintf( 'CC_Rest_Payments callback: payment %d failed: %s', (int) $payment['id'], $e->getMessage() ) );
 		}
 
+		if ( 'balance' === $payment['kind'] ) {
+			// A student paying the rest of the fee returns to the portal, not the admission page.
+			return self::redirect( home_url( '/student/payments/?paid=' . $paid ) );
+		}
 		return self::redirect( home_url( '/admissions/?ref=' . rawurlencode( $payment['public_ref'] ) . '&paid=' . $paid ) );
 	}
 

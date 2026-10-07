@@ -20,7 +20,7 @@ $instructors = array_filter(
 );
 
 $batch_state = static function ( array $b ): string {
-	return CC_Status_Chip::for_batch( (string) $b['status'], (bool) $b['application_open'], (int) $b['capacity'], (int) $b['seats_taken'] );
+	return CC_Status_Chip::for_row( $b );
 };
 $open_batches = array_values( array_filter( $batches, static fn( $b ) => CC_Status_Chip::CLOSED !== $batch_state( $b ) ) );
 $default_id   = $open_batches ? (int) $open_batches[0]['id'] : 0;

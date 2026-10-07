@@ -37,6 +37,34 @@ final class CC_Admin_Settings {
 		return $contact;
 	}
 
+	/** Settings field => option name, with defaults in policies(). Whole numbers only. */
+	const POLICY_OPTIONS = array(
+		'refund_window_days'    => 'cc_refund_window_days',
+		'waitlist_offer_hours'  => 'cc_waitlist_offer_hours',
+		'suspend_after_days'    => 'cc_installment_suspend_days',
+		'retention_enabled'     => 'cc_retention_enabled',
+	);
+
+	/** @return array{refund_window_days:int,waitlist_offer_hours:int,suspend_after_days:int,retention_enabled:int} */
+	public static function policies(): array {
+		return array(
+			'refund_window_days'   => max( 0, (int) get_option( 'cc_refund_window_days', 0 ) ),
+			'waitlist_offer_hours' => max( 1, (int) get_option( 'cc_waitlist_offer_hours', 72 ) ),
+			'suspend_after_days'   => max( 0, (int) get_option( 'cc_installment_suspend_days', 0 ) ),
+			'retention_enabled'    => '1' === (string) get_option( 'cc_retention_enabled', '0' ) ? 1 : 0,
+		);
+	}
+
+	/** @param array<string,mixed> $raw Unslashed input. @return array<string,int> */
+	public static function sanitize_policies( array $raw ): array {
+		return array(
+			'refund_window_days'   => min( 3650, max( 0, (int) ( $raw['refund_window_days'] ?? 0 ) ) ),
+			'waitlist_offer_hours' => min( 720, max( 1, (int) ( $raw['waitlist_offer_hours'] ?? 72 ) ) ),
+			'suspend_after_days'   => min( 365, max( 0, (int) ( $raw['suspend_after_days'] ?? 0 ) ) ),
+			'retention_enabled'    => ! empty( $raw['retention_enabled'] ) ? 1 : 0,
+		);
+	}
+
 	/** @param array<string,mixed> $raw Unslashed input. */
 	public static function sanitize( array $raw ): array {
 		$email = sanitize_email( (string) ( $raw['email'] ?? '' ) );
@@ -58,7 +86,15 @@ final class CC_Admin_Settings {
 		$after  = self::sanitize( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitised field by field.
 		update_option( self::OPTION, $after, false );
 
-		$changed = array_keys( array_diff_assoc( $after, $before ) );
+		$policy_before = self::policies();
+		$policy_after  = self::sanitize_policies( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- integers only.
+		foreach ( self::POLICY_OPTIONS as $field => $option ) {
+			update_option( $option, $policy_after[ $field ], false );
+		}
+		$changed = array_merge(
+			array_keys( array_diff_assoc( $after, $before ) ),
+			array_keys( array_diff_assoc( $policy_after, $policy_before ) )
+		);
 		CC_Audit::log( 'settings.update', 'settings', 0, array( 'changed' => $changed ), implode( ',', $changed ) );
 
 		wp_safe_redirect( add_query_arg( array( 'page' => 'cc-settings', 'cc_notice' => 'saved' ), admin_url( 'admin.php' ) ) );
@@ -120,6 +156,21 @@ final class CC_Admin_Settings {
 					<tr><th scope="row"><label for="cc-phone">Phone</label></th><td><input id="cc-phone" name="phone" type="text" class="regular-text" value="<?php echo esc_attr( $values['phone'] ); ?>"></td></tr>
 					<tr><th scope="row"><label for="cc-email">Email</label></th><td><input id="cc-email" name="email" type="email" class="regular-text" value="<?php echo esc_attr( $values['email'] ); ?>"></td></tr>
 					<tr><th scope="row"><label for="cc-address">Address</label></th><td><textarea id="cc-address" name="address" rows="3" class="large-text" maxlength="<?php echo (int) self::MAX_ADDR; ?>"><?php echo esc_textarea( $values['address'] ); ?></textarea></td></tr>
+				</table>
+				<h2>Money and seats</h2>
+				<?php $policy = self::policies(); ?>
+				<table class="form-table" role="presentation">
+					<tr><th scope="row"><label for="cc-refund-window">Gateway refund window (days)</label></th><td><input id="cc-refund-window" name="refund_window_days" type="number" min="0" max="3650" value="<?php echo esc_attr( (string) $policy['refund_window_days'] ); ?>"> <span class="description">0 = no limit. Refunds sent back through the payment gateway are refused after this many days; you can still record a refund made outside the system.</span></td></tr>
+					<tr><th scope="row"><label for="cc-offer-hours">Waitlist offer lasts (hours)</label></th><td><input id="cc-offer-hours" name="waitlist_offer_hours" type="number" min="1" max="720" value="<?php echo esc_attr( (string) $policy['waitlist_offer_hours'] ); ?>"> <span class="description">An offered seat that is not paid for in this time goes to the next person.</span></td></tr>
+					<tr><th scope="row"><label for="cc-suspend-days">Pause access after balance is late (days)</label></th><td><input id="cc-suspend-days" name="suspend_after_days" type="number" min="0" max="365" value="<?php echo esc_attr( (string) $policy['suspend_after_days'] ); ?>"> <span class="description">0 = never pause. Students who pay in two parts lose access this many days after the due date until they pay.</span></td></tr>
+					<?php $last = get_option( CC_Retention::OPTION_LAST, array() ); ?>
+					<tr><th scope="row">Delete old personal data</th><td>
+						<label><input name="retention_enabled" type="checkbox" value="1" <?php checked( 1, $policy['retention_enabled'] ); ?>> Delete it automatically every day</label>
+						<p class="description">Rejected or cancelled applications after <?php echo (int) CC_Retention::MONTHS_APPLICATIONS; ?> months, students <?php echo (int) CC_Retention::MONTHS_STUDENTS / 12; ?> years after their last batch ended, payment records after <?php echo (int) CC_Retention::MONTHS_FINANCIAL / 12; ?> years, message logs after <?php echo (int) CC_Retention::MONTHS_LOGS; ?> months. This cannot be undone. Have your lawyer confirm these periods first.</p>
+						<?php if ( is_array( $last ) && isset( $last['at'] ) ) : ?>
+							<p class="description">Last check <?php echo esc_html( (string) $last['at'] ); ?> UTC: <?php echo ! empty( $last['applied'] ) ? 'deleted' : 'would delete'; ?> <?php echo (int) $last['applications']; ?> applications, <?php echo (int) $last['students']; ?> students, <?php echo (int) $last['financial']; ?> payment records, <?php echo (int) $last['logs']; ?> log rows.</p>
+						<?php endif; ?>
+					</td></tr>
 				</table>
 				<?php submit_button( 'Save settings' ); ?>
 			</form>

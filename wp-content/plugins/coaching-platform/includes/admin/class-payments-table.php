@@ -75,7 +75,7 @@ final class CC_Payments_Table extends WP_List_Table {
 	}
 
 	protected function column_gateway( $item ): string {
-		return esc_html( $item['gateway'] . ' / ' . $item['method'] );
+		return esc_html( $item['gateway'] . ' / ' . $item['method'] . ( in_array( $item['kind'] ?? 'full', array( 'first', 'balance' ), true ) ? ' · ' . $item['kind'] . ' part' : '' ) );
 	}
 
 	protected function column_status( $item ): string {

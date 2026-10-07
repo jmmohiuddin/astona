@@ -54,6 +54,34 @@ final class CC_Sms {
 			'en' => 'Astona: The login number on your account was changed to {new_phone}. If this was not you, contact us now.',
 			'bn' => 'আস্তোনা: আপনার অ্যাকাউন্টের লগইন নম্বর বদলে {new_phone} করা হয়েছে। আপনি না করলে এখনই আমাদের জানান।',
 		),
+		'waitlist_joined' => array(
+			'en' => 'Astona: You are on the waitlist for {batch} (place {position}). We will text you when a seat is offered. Ref {ref}.',
+			'bn' => 'আস্তোনা: আপনি {batch} ব্যাচের অপেক্ষমাণ তালিকায় আছেন (অবস্থান {position})। আসন পাওয়া গেলে জানানো হবে। রেফ {ref}।',
+		),
+		'waitlist_offer' => array(
+			'en' => 'Astona: A seat is open for you in {batch}. Pay within {hours} hours to keep it: {url}',
+			'bn' => 'আস্তোনা: {batch} ব্যাচে আপনার জন্য আসন খালি হয়েছে। {hours} ঘণ্টার মধ্যে পেমেন্ট করুন: {url}',
+		),
+		'waitlist_expired' => array(
+			'en' => 'Astona: Your seat offer for {batch} has expired because payment was not received. You can apply again if seats are available.',
+			'bn' => 'আস্তোনা: পেমেন্ট না পাওয়ায় {batch} ব্যাচের আসনের প্রস্তাবের মেয়াদ শেষ হয়েছে। আসন থাকলে আবার আবেদন করতে পারবেন।',
+		),
+		'balance_due' => array(
+			'en' => 'Astona: Your remaining fee of BDT {amount} for {batch} is due on {date}. Pay in your portal: {url}',
+			'bn' => 'আস্তোনা: {batch} ব্যাচের বাকি ফি ৳{amount} {date} তারিখের মধ্যে পরিশোধ করুন: {url}',
+		),
+		'balance_overdue' => array(
+			'en' => 'Astona: Your remaining fee of BDT {amount} for {batch} is overdue. Please pay now: {url}',
+			'bn' => 'আস্তোনা: {batch} ব্যাচের বাকি ফি ৳{amount} মেয়াদোত্তীর্ণ। এখনই পরিশোধ করুন: {url}',
+		),
+		'balance_suspended' => array(
+			'en' => 'Astona: Access to {batch} is paused until the remaining fee of BDT {amount} is paid: {url}',
+			'bn' => 'আস্তোনা: বাকি ফি ৳{amount} পরিশোধ না হওয়া পর্যন্ত {batch} ব্যাচের অ্যাক্সেস বন্ধ আছে: {url}',
+		),
+		'refund_notice' => array(
+			'en' => 'Astona: Your payment of BDT {amount} (receipt {number}) has been refunded.',
+			'bn' => 'আস্তোনা: আপনার ৳{amount} পেমেন্ট (রসিদ {number}) ফেরত দেওয়া হয়েছে।',
+		),
 		'application_rejected' => array(
 			'en' => 'Astona: Your application was not approved. Please contact us.',
 			'bn' => 'আস্তোনা: আপনার আবেদনটি অনুমোদিত হয়নি। অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।',

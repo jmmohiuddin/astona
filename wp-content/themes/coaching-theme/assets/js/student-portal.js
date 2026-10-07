@@ -140,6 +140,26 @@
 		} );
 	}
 
+	document.querySelectorAll( '[data-pay-balance]' ).forEach( function ( btn ) {
+		btn.addEventListener( 'click', function () {
+			btn.disabled = true;
+			say( 'Opening the payment page…', false );
+			api( 'POST', 'me/payments/' + btn.getAttribute( 'data-pay-balance' ) + '/balance' ).then( function ( res ) {
+				var target = res.ok && res.body && res.body.redirect_url;
+				if ( target ) {
+					var url;
+					try { url = new URL( target, window.location.href ); } catch ( e ) { url = null; }
+					if ( url && ( 'https:' === url.protocol || 'http:' === url.protocol ) ) { window.location.assign( url.href ); return; }
+				}
+				btn.disabled = false;
+				say( ( res.body && res.body.message ) || 'Could not start the payment. Please try again.', true );
+			} ).catch( function () {
+				btn.disabled = false;
+				say( 'Network problem. Please try again.', true );
+			} );
+		} );
+	} );
+
 	var logout = document.getElementById( 'portal-logout' );
 	if ( logout ) {
 		logout.addEventListener( 'click', function () {

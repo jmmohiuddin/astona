@@ -11,6 +11,8 @@ defined( 'ABSPATH' ) || exit;
 final class CC_Settlement {
 
 	const SOURCES = array( 'callback', 'ipn', 'poll', 'admin' );
+	// Results that mean the money is in and the application/invoice state is settled.
+	const SUCCESS_RESULTS = array( 'settled', 'balance_settled', 'already_settled' );
 
 	/**
 	 * @return array{result:string,application_ref:string}
@@ -34,6 +36,8 @@ final class CC_Settlement {
 
 		if ( 'settled' === $outcome['result'] ) {
 			do_action( 'cc_application_settled', $outcome['application_id'], $payment_id );
+		} elseif ( 'balance_settled' === $outcome['result'] ) {
+			do_action( 'cc_balance_settled', $outcome['application_id'], $payment_id );
 		}
 		return array(
 			'result'          => $outcome['result'],
@@ -69,9 +73,11 @@ final class CC_Settlement {
 		}
 
 		$problem = self::validate( $payment, $invoice, $application, $report );
+		$batch   = null;
 		if ( null === $problem ) {
-			$batch = $wpdb->get_row( $wpdb->prepare( "SELECT id, capacity, seats_taken FROM {$p}cc_batches WHERE id = %d FOR UPDATE", $application['batch_id'] ), ARRAY_A );
-			if ( null === $batch || (int) $batch['seats_taken'] >= (int) $batch['capacity'] ) {
+			$batch = $wpdb->get_row( $wpdb->prepare( "SELECT id, capacity, seats_taken, installment_days FROM {$p}cc_batches WHERE id = %d FOR UPDATE", $application['batch_id'] ), ARRAY_A );
+			// A balance payment belongs to someone who already holds a seat, so a full batch is no obstacle.
+			if ( ! self::is_balance( $payment ) && ( null === $batch || (int) $batch['seats_taken'] >= (int) $batch['capacity'] ) ) {
 				$problem = 'batch_full';
 			}
 		}
@@ -80,7 +86,11 @@ final class CC_Settlement {
 			return self::outcome( $problem, $application );
 		}
 
-		self::apply_success( $payment, $invoice, $application, $report, $source );
+		if ( self::is_balance( $payment ) ) {
+			self::apply_balance( $payment, $invoice, $application, $report, $source );
+			return self::outcome( 'balance_settled', $application );
+		}
+		self::apply_success( $payment, $invoice, $application, $batch, $report, $source );
 		return self::outcome( 'settled', $application );
 	}
 
@@ -101,9 +111,13 @@ final class CC_Settlement {
 
 	/** @return string|null 'mismatch' when the gateway report cannot be applied to this invoice. */
 	private static function validate( array $payment, array $invoice, array $application, array $report ): ?string {
-		$expected_cents = (int) round( (float) $invoice['amount'] * 100 );
+		// The gateway must have charged exactly what this payment asked for (full fee, first part or balance).
+		$expected_cents = (int) round( (float) $payment['amount'] * 100 );
 		$paid_cents     = (int) round( (float) $report['amount'] * 100 );
-		if ( $paid_cents !== $expected_cents || 'unpaid' !== $invoice['status'] || 'pending' !== $application['status'] ) {
+		$state_ok       = self::is_balance( $payment )
+			? 'partial' === $invoice['status'] && 'approved' === $application['status']
+			: 'unpaid' === $invoice['status'] && 'pending' === $application['status'];
+		if ( $paid_cents !== $expected_cents || $expected_cents <= 0 || ! $state_ok ) {
 			return 'mismatch';
 		}
 		// Drivers that echo the merchant invoice number / currency (bKash) must agree with our invoice; the fake gateway omits them.
@@ -114,6 +128,10 @@ final class CC_Settlement {
 			return 'mismatch';
 		}
 		return null;
+	}
+
+	private static function is_balance( array $payment ): bool {
+		return 'balance' === ( $payment['kind'] ?? 'full' );
 	}
 
 	/** A non-completed report only ever moves the payment forward from initiated/executing/cancelled-by-timeout. */
@@ -147,7 +165,30 @@ final class CC_Settlement {
 		self::log_event( (int) $payment['id'], $source, $reason, $report );
 	}
 
-	private static function apply_success( array $payment, array $invoice, array $application, array $report, string $source ): void {
+	/** Records a balance payment: no seat, no new account; the invoice is paid off, and a paused enrollment resumes. */
+	private static function apply_balance( array $payment, array $invoice, array $application, array $report, string $source ): void {
+		global $wpdb;
+		$p      = $wpdb->prefix;
+		$now    = gmdate( 'Y-m-d H:i:s' );
+		$paid   = round( (float) $invoice['amount_paid'] + (float) $payment['amount'], 2 );
+		$whole  = $paid + 0.004 >= (float) $invoice['amount'];
+		self::update_payment(
+			(int) $payment['id'],
+			array(
+				'status'        => 'completed',
+				'trx_id'        => (string) $report['trx_id'],
+				'settled_at'    => $now,
+				'response_json' => wp_json_encode( array( 'gateway' => $report ) ),
+			)
+		);
+		self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_invoices SET amount_paid = %f, status = %s, suspended_at = NULL WHERE id = %d", $paid, $whole ? 'paid' : 'partial', $invoice['id'] ) );
+		if ( ! empty( $invoice['suspended_at'] ) ) {
+			self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_enrollments SET status = 'active' WHERE application_id = %d AND status = 'deactivated'", $application['id'] ) );
+		}
+		self::log_event( (int) $payment['id'], $source, 'balance_settled', $report );
+	}
+
+	private static function apply_success( array $payment, array $invoice, array $application, ?array $batch, array $report, string $source ): void {
 		global $wpdb;
 		$p   = $wpdb->prefix;
 		$now = gmdate( 'Y-m-d H:i:s' );
@@ -165,7 +206,12 @@ final class CC_Settlement {
 				'response_json' => wp_json_encode( array( 'gateway' => $report ) ),
 			)
 		);
-		self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_invoices SET status = 'paid' WHERE id = %d", $invoice['id'] ) );
+		if ( 'installment' === ( $invoice['plan'] ?? 'full' ) && (float) $payment['amount'] + 0.004 < (float) $invoice['amount'] ) {
+			$days = max( 1, (int) ( $batch['installment_days'] ?? 30 ) );
+			self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_invoices SET status = 'partial', amount_paid = %f, due_at = %s WHERE id = %d", (float) $payment['amount'], gmdate( 'Y-m-d H:i:s', time() + $days * DAY_IN_SECONDS ), $invoice['id'] ) );
+		} else {
+			self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_invoices SET status = 'paid', amount_paid = %f WHERE id = %d", (float) $payment['amount'], $invoice['id'] ) );
+		}
 		self::exec_prepared( $wpdb->prepare( "UPDATE {$p}cc_applications SET status = 'approved', updated_at = %s WHERE id = %d", $now, $application['id'] ) );
 		self::log_event( (int) $payment['id'], $source, 'settled', $report );
 	}

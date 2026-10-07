@@ -79,13 +79,28 @@ final class CC_Waitlist {
 		if ( ! is_array( $app ) || 'waitlisted' !== $app['status'] ) {
 			return new WP_Error( 'not_waitlisted', 'This application is not on the waitlist.' );
 		}
+		// The batch row lock serialises concurrent offers and new applications (CC_Application_Repository::create() locks the
+		// same row), so one free seat is never promised twice.
+		// Lock order application -> batch, the same as CC_Settlement, so the two cannot deadlock.
+		$wpdb->query( 'START TRANSACTION' );
+		$locked = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$p}cc_applications WHERE id = %d FOR UPDATE", $application_id ) );
+		if ( 'waitlisted' !== $locked ) {
+			$wpdb->query( 'ROLLBACK' );
+			return new WP_Error( 'not_waitlisted', 'This application is not on the waitlist.' );
+		}
+		$wpdb->get_row( $wpdb->prepare( "SELECT id FROM {$p}cc_batches WHERE id = %d FOR UPDATE", $app['batch_id'] ) );
 		if ( ! $force && self::free_seats( (int) $app['batch_id'] ) < 1 ) {
+			$wpdb->query( 'ROLLBACK' );
 			return new WP_Error( 'no_free_seat', 'There is no free seat in this batch.' );
 		}
 		// The status guard in WHERE makes a double click or a race offer exactly once.
 		$changed = $wpdb->query( $wpdb->prepare( "UPDATE {$p}cc_applications SET status = 'pending', offered_at = %s, updated_at = %s WHERE id = %d AND status = 'waitlisted'", gmdate( 'Y-m-d H:i:s' ), gmdate( 'Y-m-d H:i:s' ), $application_id ) );
 		if ( 1 !== $changed ) {
+			$wpdb->query( 'ROLLBACK' );
 			return new WP_Error( 'not_waitlisted', 'This application is not on the waitlist.' );
+		}
+		if ( false === $wpdb->query( 'COMMIT' ) ) {
+			return new WP_Error( 'offer_failed', 'The offer could not be saved.' );
 		}
 		$batch = CC_Batch_Repository::find( (int) $app['batch_id'] );
 		try {

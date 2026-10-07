@@ -663,7 +663,8 @@ async function ownerMutating(browser, fx) {
   await p.keyboard.press('Tab');
   check('settings: Tab moves to Phone', (await p.evaluate(() => document.activeElement.id)) === 'cc-phone');
   check('settings: focus ring visible on Phone', await hasFocusStyle(p));
-  await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); await p.keyboard.press('Tab');
+  // Email, Address, then the four "Money and seats" fields (refund window, offer hours, pause days, retention), then Save.
+  for (let i = 0; i < 7; i++) await p.keyboard.press('Tab');
   check('settings: Tab reaches Save button', (await p.evaluate(() => document.activeElement.id)) === 'submit', await p.evaluate(() => document.activeElement.id));
   check('settings: focus ring visible on Save', await hasFocusStyle(p));
   check('settings: all inputs have labels', await p.$$eval('.form-table input, .form-table textarea', (els) => els.every((e) => document.querySelector(`label[for="${e.id}"]`))));

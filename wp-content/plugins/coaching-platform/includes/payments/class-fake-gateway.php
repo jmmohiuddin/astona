@@ -2,7 +2,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /** Local/test gateway. State lives in a non-autoloaded option keyed by gateway_payment_id. */
-final class CC_Fake_Gateway implements CC_Payment_Gateway {
+final class CC_Fake_Gateway implements CC_Refundable_Gateway {
 
 	const OPTION_PREFIX = 'cc_fake_pay_';
 	const STATUSES      = array( 'pending', 'completed', 'failed', 'cancelled' );
@@ -68,6 +68,26 @@ final class CC_Fake_Gateway implements CC_Payment_Gateway {
 			'amount' => (float) $state['amount'],
 			'raw'    => $state,
 		);
+	}
+
+	/** Dev refund: succeeds unless the payment was set to refuse refunds with refuse_refund(). */
+	public function refund( string $gateway_payment_id, string $trx_id, float $amount, string $reason ): array {
+		$state = self::get_state( $gateway_payment_id );
+		if ( null === $state || ! empty( $state['refuse_refund'] ) ) {
+			return array( 'ok' => false, 'refund_trx_id' => '', 'error' => 'The fake gateway refused the refund.' );
+		}
+		$state['refunded'] = $amount;
+		update_option( self::OPTION_PREFIX . $gateway_payment_id, $state, false );
+		return array( 'ok' => true, 'refund_trx_id' => 'RF' . strtoupper( substr( hash( 'sha256', $gateway_payment_id . $trx_id ), 0, 10 ) ), 'error' => '' );
+	}
+
+	/** Test seam: makes the next refund of this payment fail. */
+	public static function refuse_refund( string $gateway_payment_id ): void {
+		$state = self::get_state( $gateway_payment_id );
+		if ( null !== $state ) {
+			$state['refuse_refund'] = true;
+			update_option( self::OPTION_PREFIX . $gateway_payment_id, $state, false );
+		}
 	}
 
 	public static function get_state( string $gateway_payment_id ): ?array {

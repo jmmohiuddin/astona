@@ -19,9 +19,10 @@ final class CC_Admin_Payments {
 		'created' => 'pay.created_at',
 		'settled' => 'pay.settled_at',
 	);
-	const CSV_HEADER       = array( 'Invoice', 'Application ref', 'Student', 'Phone', 'Amount', 'Currency', 'Gateway', 'Method', 'Status', 'Transaction ID', 'Created (UTC)', 'Settled (UTC)' );
+	const CSV_HEADER       = array( 'Invoice', 'Application ref', 'Student', 'Phone', 'Amount', 'Currency', 'Gateway', 'Method', 'Status', 'Transaction ID', 'Created (UTC)', 'Settled (UTC)', 'Type' );
 	const RESULT_MESSAGES  = array(
 		'settled'         => 'Payment verified with the gateway and settled. The application is approved.',
+		'balance_settled' => 'Balance payment verified with the gateway and recorded. The invoice is updated.',
 		'already_settled' => 'This payment was already settled. Nothing was changed.',
 		'not_completed'   => 'The gateway does not report this payment as completed yet. Nothing was settled.',
 		'mismatch'        => 'The gateway report does not match the invoice (amount or state). The payment stays flagged for manual review.',
@@ -29,6 +30,12 @@ final class CC_Admin_Payments {
 		'not_found'       => 'Payment not found.',
 		'forbidden'       => 'You are not allowed to reconcile payments.',
 		'refunded'             => 'Refund recorded. The payment is marked refunded, the invoice is void, the application is cancelled, the student lost access and the seat was released.',
+		'refunded_balance'     => 'Balance refund recorded. The invoice is back to partly paid and the student keeps the seat.',
+		'refund_balance_first' => 'This fee was paid in two parts. Refund the balance payment first, then the first payment.',
+		'refund_no_gateway'    => 'This payment cannot be refunded through the gateway (different gateway or no refund support). Refund it in the gateway app and record it as an outside refund.',
+		'refund_window_passed' => 'The refund window has passed for a gateway refund. Refund it outside the system if you must, and record it as an outside refund.',
+		'refund_gateway_failed' => 'The gateway did not send the money back. Nothing was changed here. Check the gateway panel before trying again.',
+		'refund_gateway_unrecorded' => 'The gateway sent the money back, but it could not be recorded here. Do NOT refund again. Record it as an outside refund using the reference in the audit log.',
 		'refunded_duplicate'   => 'Refund recorded for this payment only. Another completed payment covers the same invoice, so the application, enrollment and seat were left untouched.',
 		'already_refunded'     => 'This payment was already marked refunded. Nothing was changed.',
 		'refund_forbidden'     => 'Only the owner can mark a payment refunded.',
@@ -105,7 +112,7 @@ final class CC_Admin_Payments {
 		$offset    = ( max( 1, (int) $args['page'] ) - 1 ) * $per_page;
 		$rows      = $wpdb->get_results(
 			self::prepare(
-				"SELECT pay.id, pay.invoice_id, pay.gateway, pay.method, pay.trx_id, pay.amount, pay.status, pay.created_at, pay.updated_at, pay.settled_at,
+				"SELECT pay.id, pay.invoice_id, pay.gateway, pay.method, pay.kind, pay.trx_id, pay.amount, pay.status, pay.created_at, pay.updated_at, pay.settled_at,
 					i.number AS invoice_number, i.currency, i.application_id, a.public_ref, a.full_name, a.student_phone
 				{$from} {$where} ORDER BY {$order_col} {$order}, pay.id DESC LIMIT %d OFFSET %d",
 				array_merge( $params, array( $per_page, $offset ) )
@@ -273,7 +280,7 @@ final class CC_Admin_Payments {
 		if ( class_exists( 'CC_Audit' ) ) {
 			CC_Audit::log( 'payment.reconcile', 'payment', $payment_id, array( 'result' => $outcome['result'], 'from' => $status, 'to' => $after ), 'Reconcile now' );
 		}
-		return self::reconcile_result( $outcome['result'], 'settled' === $outcome['result'] );
+		return self::reconcile_result( $outcome['result'], in_array( $outcome['result'], array( 'settled', 'balance_settled' ), true ) );
 	}
 
 	private static function reconcile_result( string $code, bool $ok ): array {
@@ -314,18 +321,92 @@ final class CC_Admin_Payments {
 		);
 	}
 
+	/** Refund window for gateway refunds in days; 0 means no limit (Settings). */
+	public static function refund_window_days(): int {
+		return max( 0, (int) get_option( 'cc_refund_window_days', 0 ) );
+	}
+
+	/** Whether a payment may be refunded through the gateway now. */
+	public static function gateway_refund_possible( array $payment ): bool {
+		try {
+			$gateway = CC_Gateway_Factory::make();
+		} catch ( Throwable $e ) {
+			return false;
+		}
+		if ( ! $gateway instanceof CC_Refundable_Gateway || $gateway->id() !== (string) $payment['gateway'] || '' === (string) $payment['gateway_payment_id'] || '' === (string) $payment['trx_id'] ) {
+			return false;
+		}
+		$window = self::refund_window_days();
+		return 0 === $window || empty( $payment['settled_at'] ) || strtotime( $payment['settled_at'] . ' UTC' ) >= time() - $window * DAY_IN_SECONDS;
+	}
+
+	/**
+	 * Sends the money back through the gateway FIRST, then records the refund here (same effects as mark_refunded()).
+	 * If the gateway succeeds but recording fails, the result says so loudly and the gateway reference is audit-logged,
+	 * because refunding twice would pay the student twice.
+	 *
+	 * @return array|WP_Error Same shape as mark_refunded().
+	 */
+	public static function refund_via_gateway( int $payment_id, string $category, int $actor ) {
+		global $wpdb;
+		if ( ! user_can( $actor, 'cc_reconcile_payments' ) ) {
+			return new WP_Error( 'refund_forbidden', self::RESULT_MESSAGES['refund_forbidden'] );
+		}
+		if ( ! isset( self::REFUND_CATEGORIES[ $category ] ) ) {
+			return new WP_Error( 'refund_invalid', self::RESULT_MESSAGES['refund_invalid'] );
+		}
+		$pre = CC_Refund::precheck( $payment_id );
+		if ( is_wp_error( $pre ) ) {
+			return new WP_Error( $pre->get_error_code(), self::RESULT_MESSAGES[ $pre->get_error_code() ] ?? self::RESULT_MESSAGES['refund_failed'] );
+		}
+		$payment = CC_Application_Repository::find_payment( $payment_id );
+		if ( ! $payment || ! self::gateway_refund_possible( $payment ) ) {
+			$window = self::refund_window_days();
+			$late   = $payment && $window > 0 && ! empty( $payment['settled_at'] ) && strtotime( $payment['settled_at'] . ' UTC' ) < time() - $window * DAY_IN_SECONDS;
+			return new WP_Error( $late ? 'refund_window_passed' : 'refund_no_gateway', self::RESULT_MESSAGES[ $late ? 'refund_window_passed' : 'refund_no_gateway' ] );
+		}
+		$gateway = CC_Gateway_Factory::make();
+		$sent    = $gateway->refund( (string) $payment['gateway_payment_id'], (string) $payment['trx_id'], (float) $payment['amount'], self::REFUND_CATEGORIES[ $category ] );
+		if ( empty( $sent['ok'] ) ) {
+			CC_Audit::log( 'payment.refund_gateway_failed', 'payment', $payment_id, array( 'actor_id' => $actor ), substr( (string) $sent['error'], 0, 200 ) );
+			return new WP_Error( 'refund_gateway_failed', self::RESULT_MESSAGES['refund_gateway_failed'] );
+		}
+		$reference = preg_replace( '/[^A-Za-z0-9._\/ -]/', '', (string) $sent['refund_trx_id'] );
+		$recorded  = self::mark_refunded( $payment_id, $category, $reference, $actor );
+		if ( is_wp_error( $recorded ) ) {
+			CC_Audit::log( 'payment.refund_gateway_unrecorded', 'payment', $payment_id, array( 'actor_id' => $actor ), 'Gateway refund ' . $reference );
+			error_log( sprintf( 'CC refund: gateway refunded payment %d (ref %s) but recording failed: %s', $payment_id, $reference, $recorded->get_error_code() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			return new WP_Error( 'refund_gateway_unrecorded', self::RESULT_MESSAGES['refund_gateway_unrecorded'] );
+		}
+		CC_Audit::log( 'payment.refund_gateway', 'payment', $payment_id, array( 'actor_id' => $actor ), 'Gateway refund ' . $reference );
+		self::notify_refund( $payment );
+		return $recorded;
+	}
+
+	private static function notify_refund( array $payment ): void {
+		global $wpdb;
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT a.student_phone, a.user_id, i.number FROM {$wpdb->prefix}cc_invoices i JOIN {$wpdb->prefix}cc_applications a ON a.id = i.application_id WHERE i.id = %d", $payment['invoice_id'] ), ARRAY_A );
+		if ( ! is_array( $row ) ) {
+			return;
+		}
+		$user = (int) $row['user_id'] > 0 ? get_userdata( (int) $row['user_id'] ) : false;
+		try {
+			CC_Sms::queue( $user ? '+' . $user->user_login : (string) $row['student_phone'], 'refund_notice', array( 'amount' => number_format( (float) $payment['amount'], 0 ), 'number' => (string) $row['number'] ), 'payment', (int) $payment['id'] );
+		} catch ( Throwable $e ) {
+			error_log( 'CC refund: notice SMS failed: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
+	}
+
 	public static function handle_refund(): void {
 		$payment_id = isset( $_POST['payment_id'] ) ? absint( $_POST['payment_id'] ) : 0;
 		check_admin_referer( 'cc_refund_payment_' . $payment_id );
 		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) || ! current_user_can( 'cc_reconcile_payments' ) ) {
 			wp_die( esc_html__( 'You are not allowed to mark payments refunded.', 'coaching-platform' ), '', array( 'response' => 403 ) );
 		}
-		$outcome = self::mark_refunded(
-			$payment_id,
-			sanitize_key( wp_unslash( (string) ( $_POST['category'] ?? '' ) ) ),
-			sanitize_text_field( wp_unslash( (string) ( $_POST['reference'] ?? '' ) ) ),
-			get_current_user_id()
-		);
+		$category = sanitize_key( wp_unslash( (string) ( $_POST['category'] ?? '' ) ) );
+		$outcome  = '1' === (string) ( $_POST['via_gateway'] ?? '' )
+			? self::refund_via_gateway( $payment_id, $category, get_current_user_id() )
+			: self::mark_refunded( $payment_id, $category, sanitize_text_field( wp_unslash( (string) ( $_POST['reference'] ?? '' ) ) ), get_current_user_id() );
 		$code = is_wp_error( $outcome ) ? (string) $outcome->get_error_code() : $outcome['result'];
 		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE, 'payment' => $payment_id, 'cc_result' => $code ), admin_url( 'admin.php' ) ) );
 		exit;
@@ -365,7 +446,12 @@ final class CC_Admin_Payments {
 		printf( '<tr><th>%s</th><td>%s %s</td></tr>', esc_html__( 'Student', 'coaching-platform' ), esc_html( (string) $row['full_name'] ), esc_html( (string) $row['public_ref'] ) );
 		printf( '<tr><th>%s</th><td>%s</td></tr>', esc_html__( 'Amount', 'coaching-platform' ), esc_html( number_format_i18n( (float) $row['amount'], 2 ) . ' ' . $row['currency'] ) );
 		echo '</tbody></table>';
-		echo '<p style="max-width:720px"><strong>' . esc_html__( 'This only records a refund you already paid back outside this system (for example in the bKash app). No money is sent from here.', 'coaching-platform' ) . '</strong></p>';
+		$gateway_ok = self::gateway_refund_possible( (array) CC_Application_Repository::find_payment( $payment_id ) );
+		if ( $gateway_ok ) {
+			echo '<p style="max-width:720px"><strong>' . esc_html__( 'Choose below whether the money is sent back through the payment gateway from here, or you already paid it back outside this system.', 'coaching-platform' ) . '</strong></p>';
+		} else {
+			echo '<p style="max-width:720px"><strong>' . esc_html__( 'This only records a refund you already paid back outside this system (for example in the bKash app). No money is sent from here.', 'coaching-platform' ) . '</strong></p>';
+		}
 		echo '<p>' . esc_html__( 'What will happen:', 'coaching-platform' ) . '</p><ul style="list-style:disc;margin-left:20px">';
 		foreach ( array( 'The payment is marked Refunded.', 'The invoice is voided.', 'The application is cancelled.', 'The student loses access to the batch immediately.', 'The seat in the batch is released.' ) as $line ) {
 			echo '<li>' . esc_html( $line ) . '</li>';
@@ -375,6 +461,10 @@ final class CC_Admin_Payments {
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="cc_payment_refund"><input type="hidden" name="payment_id" value="' . esc_attr( (string) $payment_id ) . '">';
 		wp_nonce_field( 'cc_refund_payment_' . $payment_id );
+		if ( $gateway_ok ) {
+			echo '<p><label><input type="radio" name="via_gateway" value="1" checked> <strong>' . esc_html__( 'Send the money back through the payment gateway now', 'coaching-platform' ) . '</strong></label><br>';
+			echo '<label><input type="radio" name="via_gateway" value="0"> ' . esc_html__( 'I already refunded it outside this system', 'coaching-platform' ) . '</label></p>';
+		}
 		echo '<p><label for="cc-refund-category"><strong>' . esc_html__( 'Reason', 'coaching-platform' ) . '</strong></label><br><select id="cc-refund-category" name="category" required>';
 		echo '<option value="">' . esc_html__( 'Choose a reason', 'coaching-platform' ) . '</option>';
 		foreach ( self::REFUND_CATEGORIES as $code => $label ) {
@@ -429,6 +519,7 @@ final class CC_Admin_Payments {
 					(string) $row['trx_id'],
 					(string) $row['created_at'],
 					(string) $row['settled_at'],
+					(string) $row['kind'],
 				);
 			}
 			++$page;
@@ -475,7 +566,7 @@ final class CC_Admin_Payments {
 		if ( ! isset( self::RESULT_MESSAGES[ $code ] ) ) {
 			return;
 		}
-		$class = in_array( $code, array( 'settled', 'already_settled', 'refunded', 'refunded_duplicate', 'already_refunded' ), true ) ? 'notice-success' : 'notice-warning';
+		$class = in_array( $code, array( 'settled', 'balance_settled', 'already_settled', 'refunded', 'refunded_duplicate', 'already_refunded' ), true ) ? 'notice-success' : 'notice-warning';
 		printf( '<div class="notice %s is-dismissible"><p>%s <code>%s</code></p></div>', esc_attr( $class ), esc_html( self::RESULT_MESSAGES[ $code ] ), esc_html( $code ) );
 	}
 

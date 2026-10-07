@@ -291,8 +291,8 @@ async function extras(browser, student, state) {
   // wp-admin
   await anon.goto(`${BASE}/wp-admin/`);
   check('student /wp-admin/ -> /student/', /\/student\/$/.test(anon.url()), anon.url());
-  await anon.goto(`${BASE}/wp-login.php`);
-  check('student /wp-login.php -> /student/', /\/student\/$/.test(anon.url()), anon.url());
+  await anon.goto(`${BASE}/admin/login/`);
+  check('student /admin/login/ -> /student/', /\/student\/$/.test(anon.url()), anon.url());
 
   // Foreign receipt
   if (state.receiptId) {

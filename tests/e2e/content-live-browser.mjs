@@ -130,7 +130,7 @@ async function mkStaff() {
   return { id: parseInt(out.trim().split('\n').pop(), 10), login, pass: PW };
 }
 async function wpLogin(p, user) {
-  await p.goto(`${BASE}/wp-login.php`);
+  await p.goto(`${BASE}/admin/login/`);
   await p.fill('#user_login', user.login);
   await p.fill('#user_pass', user.pass);
   await p.click('#wp-submit');

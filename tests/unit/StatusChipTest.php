@@ -46,6 +46,15 @@ check( 'one seat left is filling', 'filling', chip_of( batch( array( 'seats_take
 check( 'just under threshold (7/10 of 9 cap -> 7/9=77%) is open', 'open', chip_of( batch( array( 'capacity' => 9, 'seats_taken' => 7 ) ) ) );
 check( '8 of 10 is filling', 'filling', chip_of( batch( array( 'capacity' => 10, 'seats_taken' => 8 ) ) ) );
 
+echo "waitlist\n";
+check( 'full batch with a waitlist is waitlist', 'waitlist', CC_Status_Chip::for_row( batch( array( 'seats_taken' => 100, 'waitlist_enabled' => 1 ) ) ) );
+check( 'full batch without a waitlist stays closed', 'closed', CC_Status_Chip::for_row( batch( array( 'seats_taken' => 100 ) ) ) );
+check( 'waitlist does not open a closed batch', 'closed', CC_Status_Chip::for_row( batch( array( 'seats_taken' => 100, 'waitlist_enabled' => 1, 'application_open' => 0 ) ) ) );
+check( 'a batch with seats left ignores the waitlist flag', 'open', CC_Status_Chip::for_row( batch( array( 'waitlist_enabled' => 1 ) ) ) );
+check( 'a waitlist batch ranks above closed', 'waitlist', CC_Status_Chip::for_batches( array( batch( array( 'status' => 'closed' ) ), batch( array( 'seats_taken' => 100, 'waitlist_enabled' => 1 ) ) ) ) );
+check( 'but below filling', 'filling', CC_Status_Chip::for_batches( array( batch( array( 'seats_taken' => 100, 'waitlist_enabled' => 1 ) ), batch( array( 'seats_taken' => 90 ) ) ) ) );
+check( 'waitlist has a label', true, str_contains( CC_Status_Chip::label( 'waitlist' ), 'Waitlist' ) );
+
 echo "for_batches\n";
 check( 'empty list is closed', 'closed', CC_Status_Chip::for_batches( array() ) );
 check( 'all closed is closed', 'closed', CC_Status_Chip::for_batches( array( batch( array( 'status' => 'closed' ) ), batch( array( 'capacity' => 0 ) ) ) ) );

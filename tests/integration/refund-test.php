@@ -163,7 +163,7 @@ t_assert( '0.00' === CC_Admin_Payments::query( array( 's' => 'ZZRF-', 'status' =
 t_assert( (float) $ledger_was - (float) CC_Admin_Payments::query( array( 's' => 'ZZRF-' ) )['completed_sum'] === 6000.00, 'ledger totals bar excludes the refunded amount' );
 $csv = iterator_to_array( CC_Admin_Payments::csv_rows( CC_Admin_Payments::filters_from( array( 's' => 'ZZRF-', 'status' => 'refunded' ) ), false ), false );
 t_assert( 1 <= count( $csv ) && 'Status' === CC_Admin_Payments::CSV_HEADER[8] && 'refunded' === $csv[0][8], 'CSV export carries the refunded status' );
-t_assert( str_contains( CC_Admin_Payments::status_html( array( 'status' => 'refunded' ) ), 'cc-chip--refunded' ) && '' === CC_Admin_Payments::refund_link( $f['payment'] ) === false, 'refunded status renders as a chip; owner sees the row action helper' );
+t_assert( str_contains( CC_Admin_Payments::status_html( array( 'status' => 'refunded' ) ), 'cc-chip--refunded' ) && '' !== CC_Admin_Payments::refund_link( $f['payment'] ), 'refunded status renders as a chip; owner sees the row action helper' );
 
 echo "mark_refunded(): idempotent, seat released once\n";
 $again = CC_Admin_Payments::mark_refunded( $f['payment'], 'other', '', $owner );
@@ -360,7 +360,7 @@ if ( function_exists( 'as_get_scheduled_actions' ) ) {
 			ActionScheduler::store()->cancel_action( $new_id );
 		}
 	}
-	t_assert( $as_before['cc_provision_student'] === t_pending_ids( 'cc_provision_student' ) && $as_before['cc_send_sms'] === t_pending_ids( 'cc_send_sms' ), 'no pending cc_provision_student/cc_send_sms actions left by this run' );
+	t_assert( array() === array_diff( t_pending_ids( 'cc_provision_student' ), $as_before['cc_provision_student'] ) && array() === array_diff( t_pending_ids( 'cc_send_sms' ), $as_before['cc_send_sms'] ), 'no pending cc_provision_student/cc_send_sms actions left by this run' );
 }
 foreach ( $cleanup['batches'] as $b ) {
 	$wpdb->delete( "{$p}cc_batches", array( 'id' => $b ) );

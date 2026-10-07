@@ -9,3 +9,6 @@ backups/
 node_modules/
 *.log
 .DS_Store
+
+# Composer dependencies are installed at deploy time (composer install --no-dev).
+wp-content/plugins/coaching-platform/vendor/

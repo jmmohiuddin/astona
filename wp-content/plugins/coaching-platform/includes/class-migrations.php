@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class CC_Migrations {
 
-	const VERSION = '9';
+	const VERSION = '10';
 	const OPTION  = 'cc_db_version';
 	const LOCK    = 'cc_migrations';
 
@@ -57,6 +57,10 @@ final class CC_Migrations {
 			schedule_text VARCHAR(255) NULL,
 			status ENUM('draft','open','closed','completed') NOT NULL DEFAULT 'draft',
 			application_open TINYINT(1) NOT NULL DEFAULT 0,
+			waitlist_enabled TINYINT(1) NOT NULL DEFAULT 0,
+			installments_enabled TINYINT(1) NOT NULL DEFAULT 0,
+			first_payment_percent TINYINT UNSIGNED NOT NULL DEFAULT 50,
+			installment_days SMALLINT UNSIGNED NOT NULL DEFAULT 30,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
@@ -73,8 +77,48 @@ final class CC_Migrations {
 		self::run_v7( $wpdb->prefix );
 		self::run_v8();
 		self::run_v9( $wpdb->prefix );
+		self::run_v10( $wpdb->prefix );
 
 		update_option( self::OPTION, self::VERSION );
+	}
+
+	/**
+	 * v10: installments, waitlist and per-payment kind. Expand-only and guarded, so safe to re-run.
+	 *  - cc_batches: waitlist_enabled, installments_enabled, first_payment_percent, installment_days.
+	 *  - cc_invoices: status gains 'partial'; amount_paid, plan, first_amount, due_at, suspended_at, last_reminder.
+	 *  - cc_payments: kind (full | first | balance).
+	 *  - cc_applications: waitlisted_at, offered_at.
+	 * The CREATE TABLE statements above list the same columns, so a later dbDelta never tries to drop them.
+	 */
+	private static function run_v10( string $p ): void {
+		global $wpdb;
+		$add = static function ( string $table, string $column, string $definition ) use ( $wpdb ): void {
+			$exists = $wpdb->get_row( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", $column ), ARRAY_A );
+			if ( ! is_array( $exists ) ) {
+				$wpdb->query( "ALTER TABLE {$table} ADD COLUMN {$column} {$definition}" );
+			}
+		};
+		$add( "{$p}cc_batches", 'waitlist_enabled', 'TINYINT(1) NOT NULL DEFAULT 0' );
+		$add( "{$p}cc_batches", 'installments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0' );
+		$add( "{$p}cc_batches", 'first_payment_percent', 'TINYINT UNSIGNED NOT NULL DEFAULT 50' );
+		$add( "{$p}cc_batches", 'installment_days', 'SMALLINT UNSIGNED NOT NULL DEFAULT 30' );
+
+		$status = $wpdb->get_row( "SHOW COLUMNS FROM {$p}cc_invoices LIKE 'status'", ARRAY_A );
+		if ( is_array( $status ) && false === strpos( (string) $status['Type'], "'partial'" ) ) {
+			$wpdb->query( "ALTER TABLE {$p}cc_invoices MODIFY status ENUM('unpaid','partial','paid','void') NOT NULL DEFAULT 'unpaid'" );
+		}
+		$add( "{$p}cc_invoices", 'amount_paid', 'DECIMAL(10,2) NOT NULL DEFAULT 0' );
+		$add( "{$p}cc_invoices", 'plan', "ENUM('full','installment') NOT NULL DEFAULT 'full'" );
+		$add( "{$p}cc_invoices", 'first_amount', 'DECIMAL(10,2) NULL' );
+		$add( "{$p}cc_invoices", 'due_at', 'DATETIME NULL' );
+		$add( "{$p}cc_invoices", 'suspended_at', 'DATETIME NULL' );
+		$add( "{$p}cc_invoices", 'last_reminder', 'VARCHAR(20) NULL' );
+		// Invoices paid before this version were paid in full.
+		$wpdb->query( "UPDATE {$p}cc_invoices SET amount_paid = amount WHERE status = 'paid' AND amount_paid = 0" );
+
+		$add( "{$p}cc_payments", 'kind', "ENUM('full','first','balance') NOT NULL DEFAULT 'full'" );
+		$add( "{$p}cc_applications", 'waitlisted_at', 'DATETIME NULL' );
+		$add( "{$p}cc_applications", 'offered_at', 'DATETIME NULL' );
 	}
 
 	/**
@@ -344,6 +388,8 @@ final class CC_Migrations {
 			consent_at DATETIME NOT NULL,
 			phone_verified_at DATETIME NULL,
 			status ENUM('pending','approved','rejected','waitlisted','cancelled') NOT NULL DEFAULT 'pending',
+			waitlisted_at DATETIME NULL,
+			offered_at DATETIME NULL,
 			payment_mode ENUM('online','offline') NOT NULL DEFAULT 'online',
 			rejection_reason VARCHAR(500) NULL,
 			reviewed_by BIGINT UNSIGNED NULL,
@@ -364,8 +410,14 @@ final class CC_Migrations {
 			application_id BIGINT UNSIGNED NOT NULL,
 			amount DECIMAL(10,2) NOT NULL,
 			currency CHAR(3) NOT NULL DEFAULT 'BDT',
-			status ENUM('unpaid','paid','void') NOT NULL DEFAULT 'unpaid',
+			status ENUM('unpaid','partial','paid','void') NOT NULL DEFAULT 'unpaid',
 			number VARCHAR(30) NOT NULL,
+			amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0,
+			plan ENUM('full','installment') NOT NULL DEFAULT 'full',
+			first_amount DECIMAL(10,2) NULL,
+			due_at DATETIME NULL,
+			suspended_at DATETIME NULL,
+			last_reminder VARCHAR(20) NULL,
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY application_id (application_id),
@@ -382,6 +434,7 @@ final class CC_Migrations {
 			gateway_payment_id VARCHAR(64) NULL,
 			trx_id VARCHAR(64) NULL,
 			amount DECIMAL(10,2) NOT NULL,
+			kind ENUM('full','first','balance') NOT NULL DEFAULT 'full',
 			status ENUM('initiated','executing','completed','failed','cancelled','reconcile_needed','refunded') NOT NULL DEFAULT 'initiated',
 			verified_by BIGINT UNSIGNED NULL,
 			response_json LONGTEXT NULL,

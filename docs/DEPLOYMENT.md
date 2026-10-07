@@ -50,10 +50,13 @@ Code is mounted read-only from the release. The WordPress core, Action Scheduler
    openssl rand -base64 24 | tr -d '/+=\n'   # -> DB passwords
    ```
    Required in production: `WORDPRESS_DB_*`, `MARIADB_ROOT_PASSWORD`, `CC_ENC_KEY`, `TURNSTILE_SITE_KEY`,
-   `TURNSTILE_SECRET`, `CC_SMS_PRIMARY` (a real driver; none exists yet), `CC_PAYMENT_GATEWAY` (a real driver; none
-   exists yet). Do not set `CC_RATE_LIMIT_DISABLED`, and never `fake` for payments or SMS.
-2. Remove the fake drivers from the release you deploy (README: "Adding the real bKash driver" step 8). They are
-   already refused outside local/development, but do not ship them.
+   `TURNSTILE_SECRET`, `CC_SMS_PRIMARY` (`bulksmsbd` or `greenweb`, plus that provider's credentials) and
+   `CC_PAYMENT_GATEWAY=bkash` with `BKASH_MODE` and the four `BKASH_*` credentials. Do not set `CC_RATE_LIMIT_DISABLED`
+   or `CC_STAFF_SECURITY_RELAXED`, and never `fake` for payments or SMS.
+2. Remove the fake drivers from the release you deploy (README: "Adding another payment driver" step 8). They are
+   already refused outside local/development, but do not ship them. Install the PHP dependency for PDF receipts in the
+   release build: `composer install --no-dev --no-interaction` in `wp-content/plugins/coaching-platform` (installs mPDF;
+   `vendor/` is not in Git, and without it receipts fall back to HTML).
 3. Validate and start:
    ```bash
    docker compose config -q
@@ -71,7 +74,6 @@ Code is mounted read-only from the release. The WordPress core, Action Scheduler
    docker compose run --rm wpcli plugin activate coaching-platform
    docker compose run --rm wpcli plugin install action-scheduler --activate
    docker compose run --rm wpcli rewrite structure '/%postname%/' --hard
-   docker compose run --rm wpcli plugin install two-factor --activate
    ```
    `DISALLOW_FILE_MODS` blocks installs from wp-admin; WP-CLI as shown is the intended path (checked locally:
    `plugin install action-scheduler` works with the constant set).
@@ -92,9 +94,14 @@ Code is mounted read-only from the release. The WordPress core, Action Scheduler
    Migrations must be expand-only (add tables/columns/indexes; never drop or rename in the same release as the code
    that stops using them), so the previous release keeps working against the new schema. That is what makes the
    rollback in section 8 safe.
-7. Enable 2FA (plugin **Two Factor**) for every owner/staff account: wp-admin > Users > Profile. Add login
-   throttling for wp-login (Cloudflare rate-limit rule on `/wp-login.php` POST, for example 5 per minute per IP, or a
-   plugin such as Limit Login Attempts Reloaded). Student logins are throttled by the plugin itself.
+7. Two-factor sign-in is built in (no plugin): staff sign in at `https://<site>/admin/login/` (`/wp-login.php` answers
+   404). The first time, each owner/staff/administrator is sent to **Astona > Security** to enrol an authenticator app
+   and save their recovery codes. Do this for every account before go-live. A locked-out colleague is reset with
+   `docker compose run --rm wpcli cc 2fa-reset <login>`. Add a Cloudflare rate-limit rule on `POST /admin/login*` (for
+   example 5 per minute per IP) as a second layer; the plugin already limits code attempts. Student logins are throttled
+   by the plugin itself. Staff are signed out after 60 idle minutes and must re-enter their password for CSV exports.
+   Optional: after counsel confirms the periods (README "Data retention"), tick "Delete old personal data" in
+   **Astona > Settings**; until then the daily job only reports what it would delete.
 8. Configure the reverse proxy (section 4), Cloudflare (section 5), then run the smoke checks (section 9).
 9. Enable the backup schedule (section 7) and take the first backup immediately.
 
@@ -145,13 +152,13 @@ reports for a week or two, then switch the header name to `Content-Security-Poli
 
 - SSL/TLS: Full (strict), Always Use HTTPS on, minimum TLS 1.2.
 - **Cache bypass** (Cache Rules, action "Bypass cache"), matched on URI path, for anything personal or stateful:
-  `/student/*`, `/wp-admin*`, `/wp-login.php`, `/admin*`, `/wp-json/cc/v1/me*`, `/wp-json/cc/v1/live-classes/*`,
+  `/student/*`, `/wp-admin*`, `/wp-login.php`, `/admin*` (includes `/admin/login/`), `/wp-json/cc/v1/me*`, `/wp-json/cc/v1/live-classes/*`,
   `/wp-json/cc/v1/auth/*`, `/wp-json/cc/v1/applications*`, `/wp-json/cc/v1/forms/*`, `/wp-json/cc/v1/payments/*`,
   and any request with a `wordpress_logged_in_*` cookie.
 - The app already sends `Cache-Control: private, no-store` on those routes (portal pages, auth, admission, live-class
   join, `/me/*`). Never enable "Cache Everything" without the bypass rules above. `GET /wp-json/cc/v1/courses` is
   public with `max-age=60` and may be cached.
-- Rate limiting rules: `/wp-login.php` and `/wp-json/cc/v1/auth/*` (defence in depth next to the plugin limiter).
+- Rate limiting rules: `/admin/login*` (POST) and `/wp-json/cc/v1/auth/*` (defence in depth next to the plugin limiter).
 - Turnstile: create a widget for the domain, put the keys in `.env` (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`). Set both TOGETHER: the contact and admission forms render the widget only when the site key is set, while the server enforces the captcha as soon as the secret is set. A secret without a site key locks every applicant out of the admission form.
 - Blocking `xmlrpc.php`, `readme.html`, `license.txt` is already done in `docker/apache/security.conf`.
 
@@ -241,7 +248,9 @@ curl -sI https://www.example.com/student/ | grep -i cache-control   # private, n
 ```
 
 Uptime monitors (UptimeRobot or similar, 1 minute, alert to phone): `/`, `/wp-json/cc/v1/courses`, `/student/login/`,
-`/admissions/`. Also watch: cron container health, disk space (`/var/lib/docker`, backups), backup log age, TLS
+`/admissions/`, and `/wp-json/cc/v1/health`. The health endpoint answers 200 `{"ok":true,...}` or 503 when the database is
+unreachable, the reconciler has not run for 5 minutes (cron stopped), a payment has been initiated for over 10 minutes, or
+any payment is in `reconcile_needed`. It returns booleans only. Also watch: cron container health, disk space (`/var/lib/docker`, backups), backup log age, TLS
 certificate expiry, and `docker compose logs wordpress | grep -i "cc provisioning failed\|fatal"`.
 Error tracking: Sentry is **not integrated**; if wanted, add the SDK/plugin and put the DSN in `.env` as
 `SENTRY_DSN` (placeholder only; nothing reads it today).
@@ -257,7 +266,7 @@ Security and secrets
 - [ ] `.env` is on the server only, mode 600, not in git; `git log -- .env` is empty.
 - [ ] `CC_ENC_KEY` generated (32 random bytes, base64) and a copy is in the password manager, apart from backups.
 - [ ] `CC_RATE_LIMIT_DISABLED` is not set; no `fake` payment or SMS driver anywhere; `WP_ENVIRONMENT_TYPE=production`.
-- [ ] Owner login is not `admin`; strong unique passwords; 2FA (Two Factor) on every staff account; wp-login throttling.
+- [ ] Owner login is not `admin`; strong unique passwords; every staff account enrolled in 2FA (Astona > Security); `/admin/login` throttled.
 - [ ] HSTS and CSP (report-only first) set at the proxy; Cloudflare Full (strict); origin accepts Cloudflare only.
 - [ ] `display_errors` off (prod.ini), `readme.html`, `license.txt`, `xmlrpc.php` denied (section 9 checks).
 - [ ] Turnstile site key AND secret both set; contact form works and the admission form shows the security check, `Verify number` enables once it completes, and an application can be submitted.

@@ -55,7 +55,7 @@
 	function submitForm( form, run ) {
 		form.addEventListener( 'submit', function ( event ) {
 			event.preventDefault();
-			var button = form.querySelector( 'button[type="submit"]' );
+			var button = Array.prototype.filter.call( form.querySelectorAll( 'button[type="submit"]' ), function ( b ) { return ! b.closest( '[hidden]' ); } )[ 0 ] || form.querySelector( 'button[type="submit"]' );
 			clearErrors( form );
 			say( 'Saving…', false );
 			button.disabled = true;
@@ -101,6 +101,64 @@
 			} );
 		} );
 	}
+
+	var phoneForm = document.getElementById( 'portal-phone-form' );
+	if ( phoneForm ) {
+		var stepRequest = phoneForm.querySelector( '[data-step="request"]' );
+		var stepConfirm = phoneForm.querySelector( '[data-step="confirm"]' );
+		var pendingPhone = '';
+		var showStep = function ( confirmStep ) {
+			stepRequest.hidden = confirmStep;
+			stepConfirm.hidden = ! confirmStep;
+			var first = ( confirmStep ? stepConfirm : stepRequest ).querySelector( 'input' );
+			if ( first ) { first.focus(); }
+		};
+		var back = phoneForm.querySelector( '[data-phone-back]' );
+		if ( back ) { back.addEventListener( 'click', function () { showStep( false ); say( '', false ); } ); }
+		submitForm( phoneForm, function ( data ) {
+			if ( stepConfirm.hidden ) {
+				pendingPhone = data.phone;
+				return api( 'POST', 'me/phone/request', { phone: data.phone, current_password: data.phone_password || '' } ).then( function ( res ) {
+					if ( res.ok ) { showStep( true ); say( res.body.message, false ); }
+					else if ( res.body && res.body.code && ! res.body.details ) {
+						res.body.details = {};
+						res.body.details[ 'wrong_password' === res.body.code ? 'phone_password' : 'phone' ] = res.body.message;
+					}
+					return res;
+				} );
+			}
+			return api( 'POST', 'me/phone/confirm', { phone: pendingPhone, code: data.code } ).then( function ( res ) {
+				if ( res.ok ) {
+					if ( res.body.nonce ) { cfg.nonce = res.body.nonce; }
+					say( 'Your mobile number was changed. Reloading…', false );
+					window.setTimeout( function () { window.location.reload(); }, 1000 );
+				} else if ( res.body && res.body.code && ! res.body.details ) {
+					res.body.details = { code: res.body.message };
+				}
+				return res;
+			} );
+		} );
+	}
+
+	document.querySelectorAll( '[data-pay-balance]' ).forEach( function ( btn ) {
+		btn.addEventListener( 'click', function () {
+			btn.disabled = true;
+			say( 'Opening the payment page…', false );
+			api( 'POST', 'me/payments/' + btn.getAttribute( 'data-pay-balance' ) + '/balance' ).then( function ( res ) {
+				var target = res.ok && res.body && res.body.redirect_url;
+				if ( target ) {
+					var url;
+					try { url = new URL( target, window.location.href ); } catch ( e ) { url = null; }
+					if ( url && ( 'https:' === url.protocol || 'http:' === url.protocol ) ) { window.location.assign( url.href ); return; }
+				}
+				btn.disabled = false;
+				say( ( res.body && res.body.message ) || 'Could not start the payment. Please try again.', true );
+			} ).catch( function () {
+				btn.disabled = false;
+				say( 'Network problem. Please try again.', true );
+			} );
+		} );
+	} );
 
 	var logout = document.getElementById( 'portal-logout' );
 	if ( logout ) {

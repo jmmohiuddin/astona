@@ -19,6 +19,9 @@ final class CC_Gateway_Factory {
 		if ( 'fake' === $name ) {
 			return new CC_Fake_Gateway();
 		}
+		if ( 'bkash' === $name ) {
+			return new CC_Bkash_Gateway();
+		}
 		throw new RuntimeException( sprintf( 'Unknown payment gateway "%s".', $name ) );
 	}
 }

@@ -5,6 +5,8 @@ defined( 'ABSPATH' ) || exit;
 final class CC_Reconciler {
 
 	const HOOK           = 'cc_reconcile';
+	/** Unix time of the last run; the health endpoint reads it as the scheduler heartbeat. */
+	const HEARTBEAT_OPTION = 'cc_reconcile_heartbeat';
 	const SCHEDULE       = 'cc_every_minute';
 	const STALE_SECONDS  = 180;
 	const CANCEL_SECONDS = 1800;
@@ -51,6 +53,7 @@ final class CC_Reconciler {
 	/** @return int Number of payments examined. */
 	public static function run(): int {
 		global $wpdb;
+		update_option( self::HEARTBEAT_OPTION, time(), false );
 		$gateway_id = CC_Gateway_Factory::make()->id();
 		$cutoff     = gmdate( 'Y-m-d H:i:s', time() - self::STALE_SECONDS );
 

@@ -40,6 +40,9 @@ final class CC_Csv {
 
 	/** @param iterable<array<int,mixed>> $rows */
 	public static function stream( string $filename, array $header, iterable $rows ): never {
+		if ( class_exists( 'CC_Reauth' ) ) {
+			CC_Reauth::require_fresh();
+		}
 		$safe_name = preg_replace( '/[^A-Za-z0-9._-]/', '-', $filename );
 		nocache_headers();
 		header( 'Content-Type: text/csv; charset=UTF-8' );

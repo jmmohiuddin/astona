@@ -27,7 +27,16 @@ final class CC_Rest_Payments {
 				'callback'            => array( __CLASS__, 'callback' ),
 				// Public: the payer's browser returns here; nothing in the request is trusted, settlement re-queries the gateway.
 				'permission_callback' => '__return_true',
-				'args'                => array( 'pid' => $pid_arg ),
+				// bKash appends paymentID (and a status hint) to the registered callback URL; the fake gateway sends pid.
+				'args'                => array(
+					'pid'       => array_merge( $pid_arg, array( 'required' => false ) ),
+					'paymentID' => array_merge( $pid_arg, array( 'required' => false ) ),
+					'status'    => array(
+						'type'     => 'string',
+						'required' => false,
+						'enum'     => array( 'success', 'failure', 'cancel' ),
+					),
+				),
 			)
 		);
 
@@ -71,11 +80,14 @@ final class CC_Rest_Payments {
 			error_log( 'CC_Rest_Payments callback: gateway unavailable: ' . $e->getMessage() );
 			return self::redirect( home_url( '/admissions/?paid=0' ) );
 		}
-		$gateway_id = (string) $request->get_param( 'pid' );
+		$gateway_id = (string) ( $request->get_param( 'pid' ) ?: $request->get_param( 'paymentID' ) );
+		if ( '' === $gateway_id ) {
+			return new WP_Error( 'cc_payment_not_found', 'Payment not found.', array( 'status' => 400 ) );
+		}
 
 		$payment = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT p.id, a.public_ref FROM {$wpdb->prefix}cc_payments p
+				"SELECT p.id, p.kind, a.public_ref FROM {$wpdb->prefix}cc_payments p
 				JOIN {$wpdb->prefix}cc_invoices i ON i.id = p.invoice_id
 				JOIN {$wpdb->prefix}cc_applications a ON a.id = i.application_id
 				WHERE p.gateway = %s AND p.gateway_payment_id = %s",
@@ -90,14 +102,21 @@ final class CC_Rest_Payments {
 
 		$paid = 0;
 		try {
-			$gateway->execute( $gateway_id );
+			// The status param is only a hint to skip a pointless execute; settle() re-queries the gateway regardless.
+			if ( ! in_array( (string) $request->get_param( 'status' ), array( 'failure', 'cancel' ), true ) ) {
+				$gateway->execute( $gateway_id );
+			}
 			$result = CC_Settlement::settle( (int) $payment['id'], 'callback' );
-			$paid   = in_array( $result['result'], array( 'settled', 'already_settled' ), true ) ? 1 : 0;
+			$paid   = in_array( $result['result'], CC_Settlement::SUCCESS_RESULTS, true ) ? 1 : 0;
 		} catch ( Throwable $e ) {
 			// The reconciler retries; the confirmation page polls status meanwhile.
 			error_log( sprintf( 'CC_Rest_Payments callback: payment %d failed: %s', (int) $payment['id'], $e->getMessage() ) );
 		}
 
+		if ( 'balance' === $payment['kind'] ) {
+			// A student paying the rest of the fee returns to the portal, not the admission page.
+			return self::redirect( home_url( '/student/payments/?paid=' . $paid ) );
+		}
 		return self::redirect( home_url( '/admissions/?ref=' . rawurlencode( $payment['public_ref'] ) . '&paid=' . $paid ) );
 	}
 

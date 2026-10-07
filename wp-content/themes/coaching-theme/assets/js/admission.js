@@ -497,6 +497,7 @@
 			} ).then( function ( r ) {
 				if ( r.ok && r.body.redirect_url ) {
 					progress.textContent = 'Redirecting to payment…';
+					if ( window.astonaTrack ) { window.astonaTrack( 'complete_admission' ); window.astonaTrack( 'payment_redirect' ); }
 					if ( ! goTo( r.body.redirect_url ) ) { fail( 'Could not start payment. Please try again.' ); }
 					return;
 				}
@@ -595,6 +596,14 @@
 				if ( ! r.ok ) { return schedule(); }
 				var app = r.body.status;
 				var pay = r.body.payment_status;
+				if ( 'waitlisted' === app ) {
+					render( 'pending', 'You are on the waitlist', 'You are number ' + ( r.body.waitlist_position || '?' ) + ' in line. We will send an SMS to your mobile number if a seat is offered. Keep this reference: ' + ref + '.' );
+					return;
+				}
+				if ( 'pending' === app && 'none' === pay ) {
+					render( 'pending', 'Complete your payment', 'A seat is held for you. Pay now to confirm it.', [ button( 'Pay now', retryPayment ) ] );
+					return;
+				}
 				if ( 'approved' === app || 'completed' === pay ) {
 					render( 'success', 'Payment received', 'Thank you. Your seat is reserved. An SMS with your login details is on its way to your mobile number.', [ link( 'Go to student login', cfg.loginUrl || '/student/login/' ) ] );
 				} else if ( 'failed' === pay || 'cancelled' === pay ) {

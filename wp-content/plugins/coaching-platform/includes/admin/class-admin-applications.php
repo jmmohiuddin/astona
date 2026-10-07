@@ -16,7 +16,7 @@ final class CC_Admin_Applications {
 	const PER_PAGE     = 20;
 	const EXPORT_CHUNK = 500;
 	const MAX_REASON   = 500;
-	const STATUSES     = array( 'pending', 'approved', 'rejected', 'cancelled' );
+	const STATUSES     = array( 'pending', 'waitlisted', 'approved', 'rejected', 'cancelled' );
 	const PHOTO_REGEX  = '#^photos/[a-f0-9]{32}\.(jpg|png)$#';
 	const SORTABLE     = array(
 		'full_name'  => 'a.full_name',
@@ -26,6 +26,9 @@ final class CC_Admin_Applications {
 	);
 	const NOTICES      = array(
 		'rejected'      => array( 'success', 'Application rejected.' ),
+		'offered'       => array( 'success', 'Seat offered. The applicant was sent an SMS with a link to pay.' ),
+		'no_free_seat'  => array( 'warning', 'There is no free seat in this batch. Tick "offer anyway" to go over capacity.' ),
+		'not_waitlisted' => array( 'error', 'This application is not on the waitlist.' ),
 		'bulk_rejected' => array( 'success', 'Selected applications processed.' ),
 		'reason_needed' => array( 'error', 'A rejection reason is required.' ),
 		'not_pending'   => array( 'error', 'Only pending applications can be rejected.' ),
@@ -47,6 +50,7 @@ final class CC_Admin_Applications {
 
 	public static function init(): void {
 		add_action( 'admin_post_cc_app_reject', array( __CLASS__, 'handle_reject' ) );
+		add_action( 'admin_post_cc_app_offer', array( __CLASS__, 'handle_offer' ) );
 		add_action( 'admin_post_cc_app_bulk_reject', array( __CLASS__, 'handle_bulk_reject' ) );
 		add_action( 'admin_post_cc_app_attach_override', array( __CLASS__, 'handle_attach_override' ) );
 		add_action( 'admin_init', array( __CLASS__, 'maybe_handle_reveal' ) );
@@ -191,7 +195,7 @@ final class CC_Admin_Applications {
 		$changed = $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$apps} SET status = 'rejected', rejection_reason = %s, reviewed_by = %d, updated_at = %s
-				WHERE id = %d AND status = 'pending'
+				WHERE id = %d AND status IN ('pending','waitlisted')
 				AND NOT EXISTS (
 					SELECT 1 FROM {$invoices} i JOIN {$payments} p ON p.invoice_id = i.id
 					WHERE i.application_id = %d AND p.status = 'completed'
@@ -205,16 +209,16 @@ final class CC_Admin_Applications {
 		);
 		// phpcs:enable
 		if ( 1 !== $changed ) {
-			if ( 'pending' !== $application['status'] ) {
+			if ( ! in_array( $application['status'], array( 'pending', 'waitlisted' ), true ) ) {
 				return new WP_Error( 'not_pending', 'Only pending applications can be rejected.' );
 			}
 			$fresh = self::find( $id );
-			return $fresh && 'pending' === $fresh['status']
+			return $fresh && in_array( $fresh['status'], array( 'pending', 'waitlisted' ), true )
 				? new WP_Error( 'paid', 'This application has a completed payment and cannot be rejected.' )
 				: new WP_Error( 'not_pending', 'Only pending applications can be rejected.' );
 		}
 
-		CC_Audit::log( 'application.reject', 'application', $id, array( 'status' => array( 'pending', 'rejected' ) ), 'rejected' ); // The reason can hold personal data; it lives in rejection_reason only.
+		CC_Audit::log( 'application.reject', 'application', $id, array( 'status' => array( $application['status'], 'rejected' ) ), 'rejected' ); // The reason can hold personal data; it lives in rejection_reason only.
 		self::notify_rejected( $application );
 		return true;
 	}
@@ -337,6 +341,13 @@ final class CC_Admin_Applications {
 		$result = self::reject( $id, $reason, get_current_user_id() );
 		$notice = is_wp_error( $result ) ? self::notice_code( $result ) : 'rejected';
 		self::redirect( array( 'page' => self::PAGE, 'view' => $id, 'cc_notice' => $notice ) );
+	}
+
+	public static function handle_offer(): void {
+		$id = self::posted_id();
+		self::authorize( self::CAP_REVIEW, 'cc_app_offer_' . $id );
+		$result = CC_Waitlist::offer( $id, get_current_user_id(), ! empty( $_POST['force'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified in authorize().
+		self::redirect( array( 'page' => self::PAGE, 'view' => $id, 'cc_notice' => is_wp_error( $result ) ? $result->get_error_code() : 'offered' ) );
 	}
 
 	public static function handle_attach_override(): void {
@@ -611,12 +622,29 @@ final class CC_Admin_Applications {
 
 		self::render_payments( $invoice, $payments );
 		self::render_enrollment( $id );
-		if ( 'pending' === $application['status'] ) {
+		if ( 'waitlisted' === $application['status'] ) {
+			self::render_offer_form( $id, $application );
+		}
+		if ( in_array( $application['status'], array( 'pending', 'waitlisted' ), true ) ) {
 			self::render_reject_form( $id );
 		}
 		if ( in_array( $id, CC_Provisioner::blocked_application_ids(), true ) ) {
 			self::render_manual_review( $id );
 		}
+	}
+
+	private static function render_offer_form( int $id, array $application ): void {
+		$free = CC_Waitlist::free_seats( (int) $application['batch_id'] );
+		echo '<h2>Waitlist</h2>';
+		printf( '<p>Place %d in line. Free seats now: <strong>%d</strong>. Seats are offered automatically in order when one frees up; offers lapse after %d hours without payment.</p>', CC_Waitlist::position( $id ), $free, CC_Waitlist::offer_hours() ); // phpcs:ignore WordPress.Security.EscapeOutput -- integers.
+		if ( ! current_user_can( self::CAP_REVIEW ) ) {
+			return;
+		}
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="cc_app_offer"><input type="hidden" name="id" value="' . esc_attr( (string) $id ) . '">';
+		wp_nonce_field( 'cc_app_offer_' . $id );
+		echo '<p><label><input type="checkbox" name="force" value="1"> Offer anyway (go over capacity)</label></p>';
+		submit_button( 'Offer a seat now', 'primary', 'submit', false );
+		echo '</form>';
 	}
 
 	private static function render_manual_review( int $id ): void {

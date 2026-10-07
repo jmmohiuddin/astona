@@ -236,6 +236,20 @@ final class CC_Rest_Auth {
 		return self::respond( array( 'ok' => true, 'message' => 'Password updated.', 'nonce' => wp_create_nonce( 'wp_rest' ) ) );
 	}
 
+	/**
+	 * Ends every session of the user and signs this browser back in, keeping the remember-me choice. Needed whenever the
+	 * password or the login name (the phone) changes, because the auth cookie embeds the login and the password hash.
+	 *
+	 * @return string Fresh REST nonce for the new session.
+	 */
+	public static function resign( int $user_id ): string {
+		$session  = self::current_session( $user_id );
+		$remember = null !== $session && ( (int) ( $session['expiration'] ?? 0 ) - (int) ( $session['login'] ?? 0 ) ) > self::REMEMBER_MIN_SPAN;
+		WP_Session_Tokens::get_instance( $user_id )->destroy_all();
+		self::start_session( $user_id, $remember );
+		return wp_create_nonce( 'wp_rest' );
+	}
+
 	private static function sign_in( WP_User $user, bool $remember, bool $grant_reauth ): WP_REST_Response {
 		$token = self::start_session( $user->ID, $remember );
 		if ( $grant_reauth && '' !== $token ) {

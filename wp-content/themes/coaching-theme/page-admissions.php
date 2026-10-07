@@ -56,7 +56,10 @@ $ref_raw = isset( $_GET['ref'] ) ? sanitize_text_field( wp_unslash( $_GET['ref']
 $ref     = preg_match( '/^[0-9A-HJKMNP-TV-Z]{26}$/', $ref_raw ) ? $ref_raw : '';
 
 $batch_valid = $batch && $course && 'publish' === $course->post_status && 'draft' !== $batch['status'];
-$batch_open  = $batch_valid && CC_Status_Chip::CLOSED !== CC_Status_Chip::for_batch( (string) $batch['status'], (bool) $batch['application_open'], (int) $batch['capacity'], (int) $batch['seats_taken'] );
+$batch_chip  = $batch_valid ? CC_Status_Chip::for_row( $batch ) : CC_Status_Chip::CLOSED;
+$batch_open  = $batch_valid && CC_Status_Chip::CLOSED !== $batch_chip;
+$on_waitlist = $batch_open && CC_Status_Chip::WAITLIST === $batch_chip;
+$split       = ( $batch_open && ! empty( $batch['installments_enabled'] ) && (float) $batch['price'] > 0 ) ? CC_Batch_Repository::split_amount( (float) $batch['price'], (int) $batch['first_payment_percent'] ) : null;
 
 $phone_tel = preg_replace( '/[^+\d]/', '', $contact['phone'] );
 ?>
@@ -144,7 +147,20 @@ $phone_tel = preg_replace( '/[^+\d]/', '', $contact['phone'] );
 
 				<fieldset class="adm-group">
 					<legend>Enrollment</legend>
-					<p>Fee: <strong><?php echo esc_html( astona_money( $batch['price'] ) ); ?></strong>. You will be sent to the payment page after submitting.</p>
+					<p>Fee: <strong><?php echo esc_html( astona_money( $batch['price'] ) ); ?></strong>.
+						<?php if ( $on_waitlist ) : ?>
+							This batch is full. Join the waitlist: you pay nothing now. If a seat opens we text you a link to pay within <?php echo esc_html( (string) CC_Waitlist::offer_hours() ); ?> hours.
+						<?php else : ?>
+							You will be sent to the payment page after submitting.
+						<?php endif; ?></p>
+					<?php if ( null !== $split ) : ?>
+						<div class="adm-field adm-plan" data-field="payment_plan" role="radiogroup" aria-labelledby="adm-plan-label">
+							<p id="adm-plan-label"><strong>How do you want to pay?</strong></p>
+							<label><input type="radio" name="payment_plan" value="full" checked> Pay in full: <?php echo esc_html( astona_money( $batch['price'] ) ); ?> now</label><br>
+							<label><input type="radio" name="payment_plan" value="installment"> Pay in two parts: <?php echo esc_html( astona_money( $split['first'] ) ); ?> now, <?php echo esc_html( astona_money( $split['balance'] ) ); ?> within <?php echo esc_html( (string) (int) $batch['installment_days'] ); ?> days (from your student portal)</label>
+							<p class="adm-error" id="adm-payment_plan-err" hidden></p>
+						</div>
+					<?php endif; ?>
 					<div class="adm-field adm-field--check" data-field="consent">
 						<input type="checkbox" id="adm-consent" name="consent" value="1" required aria-describedby="adm-consent-err">
 						<label for="adm-consent">I confirm the details are correct and agree to the admission terms. *</label>
@@ -157,7 +173,7 @@ $phone_tel = preg_replace( '/[^+\d]/', '', $contact['phone'] );
 					<input type="text" id="adm-hp" name="company_site" tabindex="-1" autocomplete="off">
 				</div>
 
-				<button type="submit" class="btn btn--primary btn--lg btn--block" id="adm-submit" aria-describedby="adm-submit-hint">Submit and pay</button>
+				<button type="submit" class="btn btn--primary btn--lg btn--block" id="adm-submit" aria-describedby="adm-submit-hint"><?php echo $on_waitlist ? 'Submit and join the waitlist' : 'Submit and pay'; ?></button>
 				<p class="adm-submit-hint muted small" id="adm-submit-hint">Verify your student mobile number to enable this button.</p>
 				<p class="adm-submitting muted" id="adm-submitting" role="status" aria-live="polite" hidden></p>
 			</form>

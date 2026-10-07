@@ -9,7 +9,7 @@ final class CC_Application_Repository {
 	const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 	/** Statuses that hold a student's phone for a batch. */
-	const ACTIVE_STATUSES = array( 'pending', 'approved' );
+	const ACTIVE_STATUSES = array( 'pending', 'approved', 'waitlisted' );
 
 	public static function ulid(): string {
 		$time = (int) floor( microtime( true ) * 1000 );
@@ -91,6 +91,9 @@ final class CC_Application_Repository {
 		$invoice  = self::find_invoice( (int) $application['id'] );
 		$payments = $invoice ? self::payments_for_invoice( (int) $invoice['id'] ) : array();
 		$statuses = array_column( $payments, 'status' );
+		if ( 'waitlisted' === $application['status'] ) {
+			return array( 'ref' => $application['public_ref'], 'status' => 'waitlisted', 'payment_status' => 'none', 'waitlist_position' => CC_Waitlist::position( (int) $application['id'] ) );
+		}
 		if ( in_array( 'completed', $statuses, true ) ) {
 			$public = 'completed';
 		} elseif ( array_intersect( $statuses, array( 'reconcile_needed', 'refunded' ) ) ) {
@@ -109,7 +112,7 @@ final class CC_Application_Repository {
 		global $wpdb;
 		$table = self::table( 'applications' );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only.
-		$id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE batch_id = %d AND student_phone = %s AND status IN ('pending','approved') LIMIT 1", $batch_id, $phone ) );
+		$id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE batch_id = %d AND student_phone = %s AND status IN ('pending','approved','waitlisted') LIMIT 1", $batch_id, $phone ) );
 		return null !== $id;
 	}
 
@@ -142,7 +145,7 @@ final class CC_Application_Repository {
 		}
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$batch = $wpdb->get_row( $wpdb->prepare( "SELECT price, status, application_open, capacity, seats_taken FROM {$batches} WHERE id = %d FOR UPDATE", $batch_id ), ARRAY_A );
+		$batch = $wpdb->get_row( $wpdb->prepare( "SELECT price, status, application_open, capacity, seats_taken, waitlist_enabled, installments_enabled, first_payment_percent FROM {$batches} WHERE id = %d FOR UPDATE", $batch_id ), ARRAY_A );
 		if ( '' !== $wpdb->last_error ) {
 			return self::db_failure();
 		}
@@ -150,12 +153,20 @@ final class CC_Application_Repository {
 			$wpdb->query( 'ROLLBACK' );
 			return new WP_Error( 'batch_not_found', 'Batch not found.', array( 'status' => 404 ) );
 		}
-		$chip = CC_Status_Chip::for_batch( (string) $batch['status'], (bool) $batch['application_open'], (int) $batch['capacity'], (int) $batch['seats_taken'] );
+		// Seats promised to waitlisted applicants who have not paid yet are not up for grabs.
+		$counted               = $batch;
+		$counted['seats_taken'] = (int) $batch['seats_taken'] + ( ! empty( $batch['waitlist_enabled'] ) ? CC_Waitlist::outstanding_offers( $batch_id ) : 0 );
+		$chip                  = CC_Status_Chip::for_row( $counted );
 		if ( CC_Status_Chip::CLOSED === $chip ) {
 			$wpdb->query( 'ROLLBACK' );
 			return new WP_Error( 'batch_closed', 'This batch is not accepting applications.', array( 'status' => 409 ) );
 		}
-		$price = $batch['price'];
+		$price      = $batch['price'];
+		$waitlisted = CC_Status_Chip::WAITLIST === $chip;
+		// Two-part payment only where the batch allows it; anything else is silently a full payment.
+		$plan = 'installment' === ( $data['payment_plan'] ?? 'full' ) && ! empty( $batch['installments_enabled'] ) && (float) $price > 0 ? 'installment' : 'full';
+		$first_amount = 'installment' === $plan ? CC_Batch_Repository::split_amount( (float) $price, (int) $batch['first_payment_percent'] )['first'] : null;
+		unset( $data['payment_plan'] );
 
 		$phone_taken = self::phone_taken( $batch_id, (string) $data['student_phone'] );
 		if ( '' !== $wpdb->last_error ) {
@@ -171,7 +182,8 @@ final class CC_Application_Repository {
 			array(
 				'public_ref'      => $data['public_ref'] ?? self::ulid(),
 				'idempotency_key' => $idempotency_key,
-				'status'          => 'pending',
+				'status'          => $waitlisted ? 'waitlisted' : 'pending',
+				'waitlisted_at'   => $waitlisted ? $now : null,
 				'payment_mode'    => 'online',
 				'created_at'      => $now,
 				'updated_at'      => $now,
@@ -199,6 +211,8 @@ final class CC_Application_Repository {
 				'amount'         => $price,
 				'currency'       => 'BDT',
 				'status'         => 'unpaid',
+				'plan'           => $plan,
+				'first_amount'   => $first_amount,
 				'number'         => sprintf( 'INV-%s-%d', gmdate( 'Ymd' ), $application_id ),
 				'created_at'     => $now,
 			)
@@ -223,16 +237,27 @@ final class CC_Application_Repository {
 		return new WP_Error( 'server_error', 'Could not save the application.', array( 'status' => 500 ) );
 	}
 
-	public static function insert_payment( array $invoice, string $gateway_id ): int {
+	/** The amount a first or full payment must carry: the first part for an installment plan, else the whole fee. */
+	public static function initial_amount( array $invoice ): string {
+		return 'installment' === ( $invoice['plan'] ?? 'full' ) && null !== ( $invoice['first_amount'] ?? null ) ? (string) $invoice['first_amount'] : (string) $invoice['amount'];
+	}
+
+	/** @param string|null $amount Defaults to initial_amount(); $kind is full, first or balance. */
+	public static function insert_payment( array $invoice, string $gateway_id, ?string $amount = null, string $kind = '' ): int {
 		global $wpdb;
-		$now = gmdate( 'Y-m-d H:i:s' );
+		$now    = gmdate( 'Y-m-d H:i:s' );
+		$amount = $amount ?? self::initial_amount( $invoice );
+		if ( '' === $kind ) {
+			$kind = 'installment' === ( $invoice['plan'] ?? 'full' ) ? 'first' : 'full';
+		}
 		$wpdb->insert(
 			self::table( 'payments' ),
 			array(
 				'invoice_id' => (int) $invoice['id'],
 				'gateway'    => $gateway_id,
 				'method'     => in_array( $gateway_id, array( 'bkash', 'offline', 'fake' ), true ) ? $gateway_id : 'fake',
-				'amount'     => $invoice['amount'],
+				'amount'     => $amount,
+				'kind'       => $kind,
 				'status'     => 'initiated',
 				'created_at' => $now,
 				'updated_at' => $now,

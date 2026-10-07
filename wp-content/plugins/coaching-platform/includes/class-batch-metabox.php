@@ -48,6 +48,7 @@ final class CC_Batch_Metabox {
 			$rows[] = array();
 		}
 		?>
+		<p><a class="button button-primary" href="<?php echo esc_url( class_exists( 'CC_Admin_Course_Editor' ) ? CC_Admin_Course_Editor::editor_url( $post->ID ) : '#' ); ?>">Open the course editor</a> to edit batches, modules and lessons together on one screen. The rows below still work.</p>
 		<p class="description">Leave the name empty to skip a row. Remove a batch by clearing its name. "Seats taken" is managed by admissions and cannot be edited here.</p>
 		<?php foreach ( $rows as $i => $row ) : ?>
 			<fieldset style="border:1px solid #c3c4c7;padding:10px;margin:0 0 10px;">
@@ -74,9 +75,15 @@ final class CC_Batch_Metabox {
 							<?php endforeach; ?>
 						</select></label>
 					<label><input type="checkbox" name="cc_batches[<?php echo (int) $i; ?>][application_open]" value="1" <?php checked( ! empty( $row['application_open'] ) ); ?>> Applications open</label>
+					<label title="When the batch is full, applicants join a waitlist and staff offer them a seat."><input type="checkbox" name="cc_batches[<?php echo (int) $i; ?>][waitlist_enabled]" value="1" <?php checked( ! empty( $row['waitlist_enabled'] ) ); ?>> Waitlist when full</label>
 					<?php if ( ! empty( $row['id'] ) ) : ?>
 						<span>Seats taken: <strong><?php echo esc_html( (string) $row['seats_taken'] ); ?></strong></span>
 					<?php endif; ?>
+				</p>
+				<p style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+					<label><input type="checkbox" name="cc_batches[<?php echo (int) $i; ?>][installments_enabled]" value="1" <?php checked( ! empty( $row['installments_enabled'] ) ); ?>> Allow two-part payment</label>
+					<label>First payment %<br><input type="number" min="10" max="90" style="width:70px" name="cc_batches[<?php echo (int) $i; ?>][first_payment_percent]" value="<?php echo esc_attr( (string) ( $row['first_payment_percent'] ?? '50' ) ); ?>"></label>
+					<label>Balance due after (days)<br><input type="number" min="1" max="365" style="width:70px" name="cc_batches[<?php echo (int) $i; ?>][installment_days]" value="<?php echo esc_attr( (string) ( $row['installment_days'] ?? '30' ) ); ?>"></label>
 				</p>
 			</fieldset>
 		<?php endforeach; ?>
@@ -159,6 +166,10 @@ final class CC_Batch_Metabox {
 				'schedule_text'    => sanitize_text_field( (string) ( $raw['schedule_text'] ?? '' ) ),
 				'status'           => in_array( $status, CC_Batch_Repository::STATUSES, true ) ? $status : 'draft',
 				'application_open' => ! empty( $raw['application_open'] ),
+				'waitlist_enabled' => ! empty( $raw['waitlist_enabled'] ),
+				'installments_enabled' => ! empty( $raw['installments_enabled'] ),
+				'first_payment_percent' => CC_Batch_Repository::clamp_percent( absint( $raw['first_payment_percent'] ?? 50 ) ),
+				'installment_days' => max( 1, min( 365, absint( $raw['installment_days'] ?? 30 ) ) ),
 			);
 		}
 		return $rows;

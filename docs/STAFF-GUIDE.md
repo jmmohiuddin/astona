@@ -4,7 +4,7 @@ For owners and staff of the coaching center. You do not need a developer to do a
 
 ## Read this first: what is not live yet
 
-Right now the website runs with **test versions** of two services:
+Until the owner confirms in **Astona > Settings > System status** that the payment gateway says **bkash** and the SMS driver is a real one (not `fake`), the website runs with **test versions** of two services:
 
 - **Online payment (bKash)**: the payment page is a test page. Real money cannot be taken online yet.
 - **SMS**: text messages (login passwords, login codes, critical notices, "application not approved" messages, receipts) are not sent to real phones yet.
@@ -17,9 +17,13 @@ Owner check: **Astona > Settings**, section **System status**. If **Payment gate
 
 ## 1. Signing in
 
-1. Go to your site address followed by `/wp-login.php`.
-2. Enter your username and password and sign in.
+1. Go to your site address followed by `/admin/login/`.
+2. Enter your username and password. Owners and staff also type the **6-digit code from the authenticator app** on their phone (or one recovery code) in the **Authenticator code** box.
 3. You land on the **Astona dashboard**. Everything for daily work is under **Astona** in the left menu.
+
+**First time (owners and staff).** After your first password sign-in the system takes you to **Two-factor authentication**. Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator or Authy), add the account by typing the **Key** shown (or tapping **Open in authenticator app** on the same phone), type the code the app shows and click **Turn on two-factor**. You are then shown **8 recovery codes once**: write them down and keep them somewhere safe. Each works one time if you lose your phone. If you are locked out and have no recovery code, ask the technical contact to reset your two-factor.
+
+You are signed out automatically after **60 minutes** without activity. Before downloading a CSV export the system asks you to type your password again.
 
 Students cannot use this page. They sign in at `/student/login/`.
 
@@ -33,10 +37,10 @@ Students cannot use this page. They sign in at `/student/login/`.
 | Students (roster, resend credentials, deactivate) | Yes | Yes | No |
 | Payments (view, export) | Yes | Yes | No |
 | Reconcile now | Yes | No | No |
-| Course content, Live classes, Notices | Yes | Yes | No |
+| Course editor, Course content, Live classes, Notices | Yes | Yes | No |
 | Inquiries, Media | Yes | Yes | No |
 | Blog, Gallery, Results, Courses, Faculty, Branches | Yes | Yes | No |
-| Audit log, Settings | Yes | No | No |
+| Audit log, SMS log, Settings | Yes | No | No |
 
 If a menu item is missing, your role does not include it. Ask the owner.
 
@@ -54,6 +58,15 @@ If a menu item is missing, your role does not include it. Ask the owner.
 The owner also sees **Recent activity** (the latest staff actions).
 
 ## 3. Courses, batches, faculty and branches
+
+### Edit batches, modules and lessons on one screen
+
+**Astona > Course editor** shows one course with all its batches, modules and lessons together. Pick the course, then:
+
+- Click a batch name to open it. Change its fields, tick **Applications open**, **Waitlist when full** or **Allow two-part payment**, and add **Modules** and **Lessons** under it (use the arrow buttons to reorder, **Move to...** to put a lesson in another module).
+- The bar next to each batch shows **how many seats are taken** (yellow from 80%, red when full). Capacity cannot be set below the seats already taken, and a batch that has applications cannot be deleted: set its status to **Closed** instead.
+- Nothing is saved until you click **Save all** (top bar). **Unsaved changes** is shown while you have edits, and the browser warns you before you leave. If a colleague saved the same course first you will see "Someone else changed this course": click **Reload now** and redo your edit.
+- Lesson PDFs are still uploaded under **Course content**; a lesson keeps its PDF when you move it.
 
 ### Add a course with batches
 
@@ -175,11 +188,12 @@ Go to **Astona > Applications**. A number badge shows how many are pending.
 
 Every application on this list was made with a mobile number the applicant confirmed with an SMS code, so the student phone belongs to the applicant. If an applicant says the code never arrived: ask them to check the number, wait one minute and press **Resend code**; a number is limited to a few codes per hour and is locked for 15 minutes after five wrong codes. If it keeps failing, take the application at the office.
 
-Tabs: **All**, **Pending**, **Approved**, **Rejected**, **Cancelled**. Use **Search applications**, the batch dropdown (**All batches**), the **From** and **To** dates and **Filter** to narrow the list.
+Tabs: **All**, **Pending**, **Waitlisted**, **Approved**, **Rejected**, **Cancelled**. Use **Search applications**, the batch dropdown (**All batches**), the **From** and **To** dates and **Filter** to narrow the list.
 
 What the statuses mean:
 
-- **Pending**: the application was submitted and is not yet paid.
+- **Pending**: the application was submitted and is not yet paid (or a waitlist seat was offered and is not yet paid).
+- **Waitlisted**: the batch was full and has **Waitlist when full** switched on. Nothing is paid yet. Open the application to see the place in line; click **Offer a seat now** to text the applicant a payment link (tick **Offer anyway** to go over capacity). Seats are also offered automatically in order when one frees up. An offer expires after the hours set in **Settings** if it is not paid; the applicant is told and the next person is offered the seat.
 - **Approved**: payment was completed and the student is enrolled automatically.
 - **Rejected**: you rejected it.
 - **Cancelled**: no longer active.
@@ -224,7 +238,11 @@ Click a student's name or **View** to see enrollments, payments and the SMS log.
 
 Go to **Astona > Payments**. Staff can view and export. Only the owner sees **Reconcile now**.
 
-Payment statuses: **Initiated** and **Executing** (in progress), **Completed** (paid), **Failed**, **Cancelled**, **Reconcile Needed** (the system found a problem and a person must check), **Refunded** (a label only; there is no refund tool in the system).
+Payment statuses: **Initiated** and **Executing** (in progress), **Completed** (paid), **Failed**, **Cancelled**, **Reconcile Needed** (the system found a problem and a person must check), **Refunded** (the money went back to the student).
+
+**Paying in two parts.** Where a batch allows it, the applicant can pay a first part (for example 40%) at admission and the rest from their portal within the days set on the batch. Those payments show as "first part" and "balance part". The dashboard shows **Balances due**. Students are texted before and after the due date. In **Settings** the owner can choose to pause a student's access some days after the due date; access returns as soon as they pay.
+
+**Refunds (owner).** On a completed payment click **Mark refunded**. If the gateway supports it you choose **Send the money back through the payment gateway now** (the system asks bKash, and only records the refund if bKash confirms) or **I already refunded it outside this system**. A refunded payment ends the enrolment and frees the seat (the next person on the waitlist is offered it). For a two-part fee, refund the balance part first. If you see "the gateway sent the money back but it could not be recorded", do **not** refund again: ask the technical contact.
 
 Filter by **All statuses**, **Needs attention**, gateway, dates, or the search box (invoice, transaction ID, phone last 4). Click **View** for the event timeline.
 
@@ -308,6 +326,10 @@ Photos of students without consent are never reachable from the website, but sti
 ## 14. Settings and audit log (owner)
 
 **Astona > Settings**: under **Institution** enter **Name**, **Phone**, **Email** and **Address**, then click **Save settings**. These details replace the sample contact details shown on the site. Blank fields keep the sample ones, so fill all four. The Contact page text is edited separately in **Pages**. **System status** shows whether payment and SMS are test or real (see the start of this guide).
+
+**Gateway refund window**, **Waitlist offer lasts** and **Pause access after balance is late** are in **Money and seats** on the same page; each explains itself. **Delete old personal data** is off until you tick it; below it you can see how many records it would delete. Have your lawyer confirm the periods first.
+
+**Astona > SMS log** (owner): every text message with its status (failed first), number partly hidden, no message text. Use it to see who did not receive a login password or receipt; resend credentials from the student's page under **Students**.
 
 **Astona > Audit log**: a record of who did what and when (rejections, reveals, exports, reconciliations, settings changes). Filter by actor, action, entity or dates. **Export CSV** is available.
 

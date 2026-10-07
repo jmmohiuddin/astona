@@ -97,8 +97,8 @@ if [ -z "$APP_B" ]; then fail "fixtures created (got '$SEED')"; exit 1; fi
 ok "fixtures created (batch $BATCH_ID, applications $APP_A, $APP_B)"
 
 echo "login"
-curl -sS -m 20 -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/wp-login.php"
-req POST "$BASE_URL/wp-login.php" -b "wordpress_test_cookie=WP%20Cookie%20check" \
+curl -sS -m 20 -c "$JAR" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/admin/login/"
+req POST "$BASE_URL/admin/login/" -b "wordpress_test_cookie=WP%20Cookie%20check" \
 	--data-urlencode "log=$OWNER" --data-urlencode "pwd=$OWNER_PW" --data-urlencode "wp-submit=Log In" \
 	--data-urlencode "redirect_to=$ADMIN_URL" --data-urlencode "testcookie=1"
 check "login redirects" "$STATUS" "302"
@@ -156,8 +156,8 @@ esac
 
 echo "owner default landing"
 rm -f "$TMP/jar2"
-curl -sS -m 20 -c "$TMP/jar2" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/wp-login.php"
-STATUS="$(curl -sS -m 30 -b "$TMP/jar2" -c "$TMP/jar2" -D "$TMP/headers" -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/wp-login.php" -b "wordpress_test_cookie=WP%20Cookie%20check" \
+curl -sS -m 20 -c "$TMP/jar2" -b "wordpress_test_cookie=WP%20Cookie%20check" -o /dev/null "$BASE_URL/admin/login/"
+STATUS="$(curl -sS -m 30 -b "$TMP/jar2" -c "$TMP/jar2" -D "$TMP/headers" -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/admin/login/" -b "wordpress_test_cookie=WP%20Cookie%20check" \
 	--data-urlencode "log=$OWNER" --data-urlencode "pwd=$OWNER_PW" --data-urlencode "wp-submit=Log In" --data-urlencode "testcookie=1")"
 LOCATION="$(tr -d '\r' < "$TMP/headers" | grep -i '^location:' | head -1)"
 case "$LOCATION" in

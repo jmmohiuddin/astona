@@ -75,6 +75,10 @@ final class CC_Batch_Repository {
 				'schedule_text'    => $row['schedule_text'],
 				'status'           => $row['status'],
 				'application_open' => $row['application_open'] ? 1 : 0,
+				'waitlist_enabled' => ! empty( $row['waitlist_enabled'] ) ? 1 : 0,
+				'installments_enabled' => ! empty( $row['installments_enabled'] ) ? 1 : 0,
+				'first_payment_percent' => self::clamp_percent( (int) ( $row['first_payment_percent'] ?? 50 ) ),
+				'installment_days' => max( 1, min( 365, (int) ( $row['installment_days'] ?? 30 ) ) ),
 				'updated_at'       => $now,
 			);
 			if ( $id && in_array( $id, $existing_ids, true ) ) {
@@ -93,6 +97,27 @@ final class CC_Batch_Repository {
 			}
 			$wpdb->delete( $table, array( 'id' => $stale_id, 'course_id' => $course_id ) );
 		}
+
+		// A raised capacity may have freed seats for people on a waitlist.
+		if ( class_exists( 'CC_Waitlist' ) ) {
+			CC_Waitlist::fill_all();
+		}
+	}
+
+	/** The first installment must be a real share of the fee: 10% to 90%. */
+	public static function clamp_percent( int $percent ): int {
+		return max( 10, min( 90, $percent ) );
+	}
+
+	/**
+	 * What the applicant pays now for a plan, and what remains. The first payment is rounded UP to a whole taka so the
+	 * balance never carries paisa.
+	 *
+	 * @return array{first:float,balance:float}
+	 */
+	public static function split_amount( float $price, int $percent ): array {
+		$first = min( $price, (float) ceil( $price * self::clamp_percent( $percent ) / 100 ) );
+		return array( 'first' => round( $first, 2 ), 'balance' => round( $price - $first, 2 ) );
 	}
 
 	/**
@@ -104,7 +129,7 @@ final class CC_Batch_Repository {
 	public static function headline_prices( array $batches ): array {
 		$available = array_filter(
 			$batches,
-			static fn( array $b ): bool => CC_Status_Chip::CLOSED !== CC_Status_Chip::for_batch( (string) $b['status'], (bool) $b['application_open'], (int) $b['capacity'], (int) $b['seats_taken'] )
+			static fn( array $b ): bool => CC_Status_Chip::CLOSED !== CC_Status_Chip::for_row( $b )
 		);
 		return array_map( 'floatval', wp_list_pluck( $available ?: $batches, 'price' ) );
 	}

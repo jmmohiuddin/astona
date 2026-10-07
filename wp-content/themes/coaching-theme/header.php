@@ -31,7 +31,7 @@
 				)
 			);
 			?>
-			<a class="btn btn--primary nav__cta" href="<?php echo esc_url( astona_apply_url() ); ?>">Apply Now</a>
+			<a class="btn btn--primary nav__cta" data-cc-event="begin_admission" href="<?php echo esc_url( astona_apply_url() ); ?>">Apply Now</a>
 		</nav>
 	</div>
 </header>

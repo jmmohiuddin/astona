@@ -7,7 +7,7 @@
 		<p class="hero__lead">Board exams, university admission and job-ready skills — in small batches, taught by instructors who care.</p>
 		<div class="hero__actions">
 			<a class="btn btn--primary btn--lg" href="<?php echo esc_url( get_post_type_archive_link( 'cc_course' ) ); ?>">Browse Courses</a>
-			<a class="btn btn--ghost btn--lg" href="<?php echo esc_url( astona_apply_url() ); ?>">Apply Now</a>
+			<a class="btn btn--ghost btn--lg" data-cc-event="begin_admission" href="<?php echo esc_url( astona_apply_url() ); ?>">Apply Now</a>
 		</div>
 	</div>
 </section>

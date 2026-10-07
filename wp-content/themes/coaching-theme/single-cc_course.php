@@ -20,7 +20,7 @@ $instructors = array_filter(
 );
 
 $batch_state = static function ( array $b ): string {
-	return CC_Status_Chip::for_batch( (string) $b['status'], (bool) $b['application_open'], (int) $b['capacity'], (int) $b['seats_taken'] );
+	return CC_Status_Chip::for_row( $b );
 };
 $open_batches = array_values( array_filter( $batches, static fn( $b ) => CC_Status_Chip::CLOSED !== $batch_state( $b ) ) );
 $default_id   = $open_batches ? (int) $open_batches[0]['id'] : 0;
@@ -36,7 +36,7 @@ $related    = array_slice(
 	3
 );
 ?>
-<section class="course-hero">
+<section class="course-hero" data-cc-view="view_course_detail" data-cc-course="<?php echo esc_attr( (string) $course_id ); ?>">
 	<div class="container course-hero__inner">
 		<div>
 			<div class="card__meta"><?php echo astona_chip( $chip, CC_Status_Chip::label( $chip ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
@@ -49,7 +49,7 @@ $related    = array_slice(
 				<p class="buy-box__price"><span class="muted">From</span> <strong><?php echo esc_html( astona_money( min( $prices ) ) ); ?></strong></p>
 			<?php endif; ?>
 			<?php if ( $open_batches ) : ?>
-				<a class="btn btn--primary btn--lg btn--block" href="<?php echo esc_url( $apply_url ); ?>" data-apply-cta aria-label="<?php echo esc_attr( 'Apply now for ' . get_the_title() ); ?>">Apply Now</a>
+				<a class="btn btn--primary btn--lg btn--block" href="<?php echo esc_url( $apply_url ); ?>" data-apply-cta data-cc-event="begin_admission" data-cc-course="<?php echo esc_attr( (string) $course_id ); ?>" aria-label="<?php echo esc_attr( 'Apply now for ' . get_the_title() ); ?>">Apply Now</a>
 			<?php else : ?>
 				<span class="btn btn--disabled btn--lg btn--block" aria-disabled="true">Applications Closed</span>
 				<p class="muted small">Call us to hear about the next batch.</p>
@@ -135,7 +135,7 @@ $related    = array_slice(
 <?php endif; ?>
 
 <?php if ( $open_batches ) : ?>
-<div class="sticky-cta"><a class="btn btn--primary btn--block" href="<?php echo esc_url( $apply_url ); ?>" data-apply-cta aria-label="<?php echo esc_attr( 'Apply now for ' . get_the_title() ); ?>">Apply Now</a></div>
+<div class="sticky-cta"><a class="btn btn--primary btn--block" href="<?php echo esc_url( $apply_url ); ?>" data-apply-cta data-cc-event="begin_admission" data-cc-course="<?php echo esc_attr( (string) $course_id ); ?>" aria-label="<?php echo esc_attr( 'Apply now for ' . get_the_title() ); ?>">Apply Now</a></div>
 <?php endif; ?>
 
 <?php get_footer(); ?>

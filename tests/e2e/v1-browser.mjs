@@ -121,12 +121,12 @@ const focusStyled = (p) => p.evaluate(() => {
   return (cs.boxShadow && cs.boxShadow !== 'none') || (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0);
 });
 async function wpLogin(p, user) {
-  await p.goto(`${BASE}/wp-login.php`);
+  await p.goto(`${BASE}/admin/login/`);
   await p.fill('#user_login', user.login);
   await p.fill('#user_pass', user.pass);
   await p.click('#wp-submit');
   await p.waitForLoadState('load').catch(() => {});
-  await p.waitForURL((u) => !/wp-login\.php$/.test(u.pathname), { timeout: 20000 }).catch(() => {});
+  await p.waitForURL((u) => !/\/admin\/login\/?$/.test(u.pathname), { timeout: 20000 }).catch(() => {});
   user.landed = p.url();
 }
 const anonGet = async (ctx, url, opts = {}) => ctx.request.get(url.startsWith('http') ? url : `${BASE}${url}`, { maxRedirects: 0, failOnStatusCode: false, ...opts });

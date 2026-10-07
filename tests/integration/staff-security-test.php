@@ -147,7 +147,7 @@ t_assert( ! is_wp_error( $get ) && 404 === wp_remote_retrieve_response_code( $ge
 $page = wp_remote_get( 'http://wordpress/admin/login/', array( 'timeout' => 20, 'redirection' => 0 ) );
 $body = is_wp_error( $page ) ? '' : wp_remote_retrieve_body( $page );
 t_assert( 200 === wp_remote_retrieve_response_code( $page ) && str_contains( $body, 'name="log"' ), '/admin/login/ serves the login form' );
-t_assert( str_contains( $body, 'action="http://wordpress/admin/login/"' ), 'the form posts back to /admin/login/' );
+t_assert( (bool) preg_match( '#<form[^>]+action="https?://[^"/]+/admin/login/"#', $body ), 'the form posts back to /admin/login/' );
 // The web server may run with CC_STAFF_SECURITY_RELAXED=1 (the dev compose file does); the live 2FA checks need it off.
 $server_enforces = str_contains( $body, 'name="cc_totp"' );
 if ( ! $server_enforces ) {

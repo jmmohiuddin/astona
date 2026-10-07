@@ -360,7 +360,7 @@ if ( function_exists( 'as_get_scheduled_actions' ) ) {
 			ActionScheduler::store()->cancel_action( $new_id );
 		}
 	}
-	t_assert( $as_before['cc_provision_student'] === t_pending_ids( 'cc_provision_student' ) && $as_before['cc_send_sms'] === t_pending_ids( 'cc_send_sms' ), 'no pending cc_provision_student/cc_send_sms actions left by this run' );
+	t_assert( array() === array_diff( t_pending_ids( 'cc_provision_student' ), $as_before['cc_provision_student'] ) && array() === array_diff( t_pending_ids( 'cc_send_sms' ), $as_before['cc_send_sms'] ), 'no pending cc_provision_student/cc_send_sms actions left by this run' );
 }
 foreach ( $cleanup['batches'] as $b ) {
 	$wpdb->delete( "{$p}cc_batches", array( 'id' => $b ) );
